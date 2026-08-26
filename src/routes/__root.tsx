@@ -1,4 +1,4 @@
-import { Layout } from '@/widgets/layout/Layout'
+import { Layout } from '@/feature/layout/Layout'
 import { Outlet, createRootRoute } from '@tanstack/react-router'
 
 export const Route = createRootRoute({

@@ -1,14 +1,30 @@
-import { create } from 'zustand'
-import { combine } from 'zustand/middleware'
+import { create } from "zustand"
+
+export type LibraryVariant = "list" | "grid"
+export type LibraryViewMode = "pagination" | "infinity"
 
 interface LibraryStore {
-  page: number,
-  variant: "list" | "grid",
-  render: "pagination" | "infinity"
+  search: string | null
+  page: number
+
+  variant: LibraryVariant
+  viewMode: LibraryViewMode
+
+  setPage: (page: number) => void
+  setVariant: (variant: LibraryVariant) => void
+  setViewMode: (viewMode: LibraryViewMode) => void
+  setSearch: (search: string) => void
 }
 
 export const useLibraryStore = create<LibraryStore>((set) => ({
+  search: null,
   page: 0,
+
   variant: "list",
-  render: "infinity"
+  viewMode: "infinity",
+
+  setPage: (page) => set({ page }),
+  setVariant: (variant) => set({ variant }),
+  setViewMode: (viewMode) => set({ viewMode }),
+  setSearch: (search) => set({ search }),
 }))

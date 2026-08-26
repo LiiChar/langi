@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
-use crate::application::ports::book_scanner::{BookScanner, BookScannerError};
+use crate::application::books::ports::book_scanner::{BookScanner, BookScannerError};
 
 pub struct FileSystemBookScanner;
 

@@ -1,3 +1,3 @@
 pub mod document_parser;
 pub mod filesystem;
-pub mod repositories;
+pub mod database;

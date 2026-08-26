@@ -1,17 +1,13 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
-use tauri_specta::{collect_commands, Builder};
 use specta::Type;
+use tauri::State;
 
 use crate::{
-    application::books::parse::{ParseBookError, ParseBookService, ParseBooksResult},
     domain::Book,
-    infrastructure::{document_parser::DocumentBookParser, filesystem::FileSystemBookScanner},
+    AppState,
 };
-
-type AppParseService = ParseBookService<DocumentBookParser, FileSystemBookScanner>;
 
 #[derive(Type, Debug, Clone, Serialize, Deserialize)]
 pub struct ParseBooksResponse {
@@ -23,9 +19,18 @@ pub struct ParseBooksResponse {
 #[specta::specta]
 pub fn command_parse_books(
     path: PathBuf,
-    service: State<'_, AppParseService>,
+    state: State<'_, AppState>,
 ) -> Result<ParseBooksResponse, String> {
-    let result = service.parse_books(&path).map_err(|e| e.to_string())?;
+    let result = state
+        .book
+        .parse
+        .parse_books(&path)
+        .map_err(|e| e.to_string())?;
+
+    if !result.books.is_empty() {
+        let save = state.book.import.import_books(result.books.clone().as_slice());
+        log::info!("Saved books: {:?}", save);
+    }
 
     Ok(ParseBooksResponse {
         books: result.books,
@@ -41,7 +46,16 @@ pub fn command_parse_books(
 #[specta::specta]
 pub fn command_parse_book(
     path: PathBuf,
-    service: State<'_, AppParseService>,
+    state: State<'_, AppState>,
 ) -> Result<Book, String> {
-    service.parse_book(path).map_err(|e| e.to_string())
+    let book = state
+        .book
+        .parse
+        .parse_book(path)
+        .map_err(|e| e.to_string())?;
+
+    let save = state.book.import.import_book(book.clone());
+    log::info!("Saved book: {:?}", save);
+
+    Ok(book)
 }

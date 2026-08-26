@@ -7,27 +7,25 @@ export type Book = {
 
 export type BookMeta = {
 	title: string;
-	author?: string;
-	language?: string;
-	cover_path?: string;
+	author: string | null;
+	language: string  | null;
+	cover_path: string  | null;
 	path: string;
 	size: number;
 	last_read_at: number;
 	last_modified: number;
 	created_at: number;
-	chars_read?: number;
-	progress_read?: number;
-	genres?: string[];
-	description?: string;
+	chars_read: number  | null;
+	progress_read: number  | null;
+	genres: string[]  | null;
+	description: string  | null;
   count_chapters: number;
   current_chapter: number;
 };
 
 export type Chapter = {
-  id: string;
-  title?: string;
+  title: string  | null;
 	html: string;
-	order: number;
 }
 
 

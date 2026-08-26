@@ -3,9 +3,7 @@ use std::{fs, path::Path, time::UNIX_EPOCH};
 use document_parser::{ContentType, DocumentParser, ParseOptions};
 
 use crate::{
-    application::ports::book_parser::{BookParser as BookParserPort, BookParserError},
-    domain::Book,
-    infrastructure::document_parser::mapper::DocumentMapper,
+    application::books::ports::book_parser::{BookParser, BookParserError}, domain::Book, infrastructure::document_parser::mapper::DocumentMapper,
 };
 
 pub struct DocumentBookParser {
@@ -31,7 +29,7 @@ impl DocumentBookParser {
     }
 }
 
-impl BookParserPort for DocumentBookParser {
+impl BookParser for DocumentBookParser {
     fn parse(&self, path: &Path) -> Result<Book, BookParserError> {
         let document = self
             .parser
@@ -48,14 +46,14 @@ impl BookParserPort for DocumentBookParser {
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| duration.as_secs())
-            .unwrap_or(0)  as i32;
+            .unwrap_or(0) as i32;
 
         let created_at = metadata
             .created()
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| duration.as_secs())
-            .unwrap_or(0)  as i32;
+            .unwrap_or(0) as i32;
 
         Ok(DocumentMapper::to_book(
             document,

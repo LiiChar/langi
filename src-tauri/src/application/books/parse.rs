@@ -1,11 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    application::ports::{
-        book_parser::{BookParser, BookParserError},
-        book_scanner::{BookScanner, BookScannerError},
-    },
-    domain::Book,
+    application::books::ports::{book_parser::{BookParser, BookParserError}, book_scanner::{BookScanner, BookScannerError}}, domain::Book,
 };
 
 #[derive(Debug)]
