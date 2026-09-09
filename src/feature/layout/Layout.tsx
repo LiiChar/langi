@@ -4,22 +4,23 @@ import RootProviders from "./Providers"
 import { useLayoutStore } from "./store/LayoutStore"
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
-  const layoutStore = useLayoutStore();
-  const { header, footer, footerVisible, headerVisible } = layoutStore;
+  const { header, footer, footerVisible, headerVisible } = useLayoutStore()
 
   return (
     <RootProviders>
-        <div className="w-full h-[calc(100lvh-46px)]">
-          {header && headerVisible ? header : <Header />}
+      <div className="flex h-screen min-h-0 w-full flex-col overflow-hidden bg-sidebar">
+        {headerVisible && (header ?? <Header />)}
 
-          <main className="w-full h-full bg-sidebar pr-1 ">
-            <div className="h-full w-full rounded-lg border border-border bg-background overflow-auto">
+        <div className="flex min-h-0 flex-1 w-full pr-1">
+          <div className="flex min-h-0 h-full w-full flex-col ">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {children}
             </div>
-          </main>
-
-          {footer && footerVisible ? footer : <Footer />}
+          </div>
         </div>
+
+        {footerVisible && (footer ?? <Footer />)}
+      </div>
     </RootProviders>
   )
 }

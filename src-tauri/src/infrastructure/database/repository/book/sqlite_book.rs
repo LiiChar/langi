@@ -11,11 +11,8 @@ use rusqlite::{
 };
 
 use crate::{
-    application::repositories::{
-        BookRepository,
-        RepositoryError,
-    },
-    domain::{
+
+    application::repositories::{book::book::BookRepository, error::RepositoryError}, domain::{
         Book,
         BookMeta,
         Chapter,

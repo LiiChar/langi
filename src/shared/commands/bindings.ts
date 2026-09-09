@@ -36,6 +36,14 @@ async getBook(bookId: string) : Promise<Result<Book, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getNextActivity() : Promise<Result<LearningActivity, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_next_activity") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -52,6 +60,7 @@ async getBook(bookId: string) : Promise<Result<Book, string>> {
 export type Book = { id: string; meta: BookMeta; chapters: Chapter[] | null }
 export type BookMeta = { title: string; description: string | null; author: string | null; language: string | null; cover_path: string | null; path: string; size: number; last_read_at: number; last_modified: number; created_at: number; genres: string[] | null }
 export type Chapter = { title: string | null; html: string }
+export type LearningActivity = { WordReview: { word_ids: string[]; reason: string } } | { Translation: { word_id: string; reason: string } } | { SkillExercise: { skill_id: string; reason: string } } | { ContinueReading: { book_id: string; chapter_id: string; reason: string } } | { ComprehensionExercise: { book_id: string; chapter_id: string; reason: string } } | { Rest: { reason: string } }
 export type ParseBooksResponse = { books: Book[]; errors: string[] }
 
 /** tauri-specta globals **/

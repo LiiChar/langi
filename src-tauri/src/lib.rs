@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use application::books::parse::ParseBookService;
 use infrastructure::{document_parser::DocumentBookParser, filesystem::FileSystemBookScanner};
@@ -6,7 +6,7 @@ use log::LevelFilter;
 use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, Builder};
 
-use crate::{application::books::{BookServices, ImportBooksService}, infrastructure::database::{repository::book::sqlite_book::SqliteBookRepository, sqlite::{DatabaseError, SqliteDatabase}}};
+use crate::{application::books::{BookServices, ImportBooksService}, infrastructure::{database::{repository::{book::{sqlite_book::SqliteBookRepository, sqlite_book_reading_progress::SqliteBookReadingProgressRepository}, learning::{sqlite_learning_event::SqliteLearningEventRepository, sqlite_user_level::SqliteUserLevelRepository, sqlite_user_skill::SqliteUserSkillRepository, sqlite_user_word::SqliteUserWordRepository}}, sqlite::{DatabaseError, SqliteDatabase}}, learning::engine::LearningEngine}};
 
 pub mod application;
 pub mod commands;
@@ -15,6 +15,7 @@ pub mod infrastructure;
 
 pub struct AppState {
     pub book: BookServices,
+    pub learning_engine: LearningEngine,
 }
 
 impl AppState {
@@ -24,19 +25,29 @@ impl AppState {
                 database_path,
             ).unwrap();
 
-        let repository =
-            database.book_repository();
+        let book_repository = SqliteBookRepository::new(
+            Arc::clone(
+                &database.connection
+            ),
+        );
 
         let books =
             ImportBooksService::new(
-                repository,
+                book_repository,
             );
+
+        let learning_engine = LearningEngine::new(
+            Arc::clone(
+                &database.connection
+            ),
+        );
 
         Self {
             book: BookServices {
                 import: books,
                 parse: ParseBookService::new(DocumentBookParser::new(), FileSystemBookScanner),
             },
+            learning_engine: learning_engine
         }
     }
 }
@@ -54,6 +65,7 @@ pub fn run() {
             crate::commands::parse::command_parse_books,
             crate::commands::books::get_books,
             crate::commands::books::get_book,
+            crate::commands::learning::get_next_activity,
         ]);
 
     #[cfg(debug_assertions)]

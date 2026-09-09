@@ -1,11 +1,5 @@
-use std::path::Path;
-
 use crate::{
-    application::repositories::{
-        BookRepository,
-        RepositoryError,
-    },
-    domain::Book,
+    application::repositories::{book::book::BookRepository, error::RepositoryError}, domain::Book,
 };
 
 #[derive(Debug, thiserror::Error)]

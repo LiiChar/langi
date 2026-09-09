@@ -76,7 +76,7 @@ export function RootSidebar(
   )
 
   const collapsible = useLayoutStore(
-    (state) => state.sidebarCollapsible
+    (state) => state.sidebarMode
   )
 
   const user: User = {

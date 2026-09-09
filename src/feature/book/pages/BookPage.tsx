@@ -15,7 +15,7 @@ import { useBooksStore } from "../store/BookStore";
 import { getTimeAgo } from "#lib/date";
 
 export function BookPage() {
-  const routeApi = getRouteApi('/book/$bookId')
+  const routeApi = getRouteApi('/book/$bookId/')
   const navigate = useNavigate();
 
   const data = routeApi.useLoaderData()

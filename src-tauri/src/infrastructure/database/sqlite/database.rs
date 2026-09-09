@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 
-use crate::infrastructure::database::{repository::book::sqlite_book::SqliteBookRepository, sqlite::migration::{MigrationError, run}};
+use crate::infrastructure::database::{repository::{book::sqlite_book::SqliteBookRepository, learning::sqlite_user_level::SqliteUserLevelRepository}, sqlite::migration::{MigrationError, run}};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
@@ -25,7 +25,7 @@ pub enum DatabaseError {
 }
 
 pub struct SqliteDatabase {
-    connection: Arc<Mutex<Connection>>,
+    pub connection: Arc<Mutex<Connection>>,
 }
 
 impl SqliteDatabase {
@@ -55,13 +55,8 @@ impl SqliteDatabase {
         })
     }
 
-    pub fn book_repository(
-        &self,
-    ) -> SqliteBookRepository {
-        SqliteBookRepository::new(
-            Arc::clone(
-                &self.connection
-            ),
-        )
-    }
+
+
+
+
 }

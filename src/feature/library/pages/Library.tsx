@@ -17,11 +17,11 @@ export const LibraryPage = () => {
   const handleBookClick = (bookId: string) => {
     console.log(bookId)
     setSelectedBookId(bookId);
-    navigate({ to: `/book/${bookId}`});
+    navigate({ to: `/book/${bookId}/read`});
   }
 
   return (
-    <div className="p-2">
+    <div className="p-2 window">
       {
         variant == "grid"
         ? <BookGrid selectedBookId={selected} books={books} onClick={handleBookClick} />

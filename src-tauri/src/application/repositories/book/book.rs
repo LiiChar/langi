@@ -1,16 +1,5 @@
-use crate::domain::Book;
+use crate::{application::repositories::error::RepositoryError, domain::Book};
 
-#[derive(Debug, thiserror::Error)]
-pub enum RepositoryError {
-    #[error("database error: {0}")]
-    DatabaseError(String),
-
-    #[error("entity not found")]
-    NotFound,
-
-    #[error("invalid input: {0}")]
-    InvalidInput(String),
-}
 
 pub trait BookRepository: Send + Sync {
     fn insert(
