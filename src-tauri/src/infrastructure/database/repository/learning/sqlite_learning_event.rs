@@ -52,16 +52,7 @@ impl SqliteLearningEventRepository {
             event_type: serde_json::from_str(&event_type)
                 .unwrap_or(LearningEventType::WordSeen),
 
-            timestamp:
-                DateTime::parse_from_rfc3339(
-                    &timestamp
-                )
-                .map(|value| {
-                    value.with_timezone(&Utc)
-                })
-                .unwrap_or_else(|_| {
-                    Utc::now()
-                }),
+            timestamp: timestamp.parse().unwrap_or(0),
 
             context: LearningEventContext {
                 book_id:
@@ -179,8 +170,7 @@ impl SqliteLearningEventRepository {
                     event.id,
                     event.user_id,
                     event_type,
-                    event.timestamp
-                        .to_rfc3339(),
+                    event.timestamp,
                     event.context.book_id,
                     event.context.chapter_id,
                     event.context.element_id,

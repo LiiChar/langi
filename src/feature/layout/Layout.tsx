@@ -8,7 +8,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   return (
     <RootProviders>
-      <div className="flex h-screen min-h-0 w-full flex-col overflow-hidden bg-sidebar">
+      <div className="flex h-screen min-h-0 w-full flex-col overflow-hidden bg-secondary">
         {headerVisible && (header ?? <Header />)}
 
         <div className="flex min-h-0 flex-1 w-full pr-1">

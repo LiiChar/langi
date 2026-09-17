@@ -24,6 +24,7 @@ export type BookMeta = {
 };
 
 export type Chapter = {
+  id: string;
   title: string  | null;
 	html: string;
 }

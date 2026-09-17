@@ -27,12 +27,12 @@ export function BookListItem({
     <div
       {...rest}
       className={`
-        flex items-center gap-4 cursor-pointer
+        flex items-center gap-4 cursor-pointer w-full
         bg-secondary
-        hover:bg-secondary-hover/60
-        transition-all duration-150
+        hover:bg-secondary/60
+        transition-all duration- *:150
         animate-fade-in
-        rounded-lg
+        rounded-lg pr-3
         ${className ?? ""}
       `}
       onClick={() => onHandleClick(book.id)}
@@ -58,7 +58,7 @@ export function BookListItem({
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center pl-3">
             <BookImage
               size={20}
               className="text-muted-foreground"

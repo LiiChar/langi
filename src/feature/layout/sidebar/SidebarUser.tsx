@@ -40,7 +40,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
 
   return (
     <SidebarMenu>
-      <SidebarMenuItem className="w-full">
+      <SidebarMenuItem className="w-full group-data-[collapsible=icon]:translate-x-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={

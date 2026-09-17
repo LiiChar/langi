@@ -1,9 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{
-    DateTime,
-    Duration,
-    Utc,
+    DateTime, Duration, TimeZone, Utc,
 };
 use rusqlite::Connection;
 
@@ -31,6 +29,7 @@ pub enum LearningError {
     Repository(#[from] RepositoryError),
 }
 
+#[derive(Clone)]
 pub struct LearningEngine {
     event_repository:
         Arc<dyn LearningEventRepository>,
@@ -259,12 +258,30 @@ impl LearningEngine {
             );
 
         if word.first_seen_at.is_none() {
-            word.first_seen_at =
-                Some(event.timestamp);
+            word.first_seen_at = Some(
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?,
+            );
         }
 
-        word.last_seen_at =
-            Some(event.timestamp);
+        word.first_seen_at = Some(
+            Utc.timestamp_opt(event.timestamp as i64, 0)
+                .single()
+                .ok_or_else(|| {
+                    LearningError::Repository(
+                        RepositoryError::InvalidInput(
+                            "Failed parse event timestamp".to_string(),
+                        ),
+                    )
+                })?,
+        );
 
         self.update_word_familiarity(
             &mut word,
@@ -314,11 +331,31 @@ impl LearningEngine {
 
         if word.first_seen_at.is_none() {
             word.first_seen_at =
-                Some(event.timestamp);
+                Some(
+                    Utc.timestamp_opt(event.timestamp as i64, 0)
+                        .single()
+                        .ok_or_else(|| {
+                            LearningError::Repository(
+                                RepositoryError::InvalidInput(
+                                    "Failed parse event timestamp".to_string(),
+                                ),
+                            )
+                        })?,
+                );
         }
 
         word.last_seen_at =
-            Some(event.timestamp);
+            Some(
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?,
+            );
 
         self.update_word_familiarity(
             &mut word,
@@ -395,7 +432,17 @@ impl LearningEngine {
             word.repetitions.max(1);
 
         word.last_reviewed_at =
-            Some(event.timestamp);
+            Some(
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?,
+            );
 
         self.update_word_familiarity(
             &mut word,
@@ -407,7 +454,15 @@ impl LearningEngine {
 
         self.schedule_after_manual_known(
             &mut word,
-            event.timestamp,
+            Utc.timestamp_opt(event.timestamp as i64, 0)
+                .single()
+                .ok_or_else(|| {
+                    LearningError::Repository(
+                        RepositoryError::InvalidInput(
+                            "Failed parse event timestamp".to_string(),
+                        ),
+                    )
+                })?,
         );
 
         self.word_repository.upsert(
@@ -443,7 +498,17 @@ impl LearningEngine {
             WordState::Learning;
 
         word.next_review_at =
-            Some(event.timestamp);
+            Some(
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?,
+            );
 
         self.update_word_familiarity(
             &mut word,
@@ -491,7 +556,15 @@ impl LearningEngine {
                 word_id,
                 *correct,
                 *response_time_ms,
-                event.timestamp,
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?
             )?;
         }
 
@@ -506,7 +579,15 @@ impl LearningEngine {
                 skill_id,
                 *correct,
                 0.5,
-                event.timestamp,
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?,
             )?;
         }
 
@@ -524,7 +605,15 @@ impl LearningEngine {
                     skill_id,
                     *correct,
                     0.5,
-                    event.timestamp,
+                    Utc.timestamp_opt(event.timestamp as i64, 0)
+                        .single()
+                        .ok_or_else(|| {
+                            LearningError::Repository(
+                                RepositoryError::InvalidInput(
+                                    "Failed parse event timestamp".to_string(),
+                                ),
+                            )
+                        })?,
                 )?;
             }
         }
@@ -537,7 +626,7 @@ impl LearningEngine {
         user_id: &str,
         word_id: &str,
         correct: bool,
-        response_time_ms: Option<u64>,
+        response_time_ms: Option<i32>,
         timestamp: DateTime<Utc>,
     ) -> Result<(), LearningError> {
         let mut word =
@@ -774,7 +863,15 @@ impl LearningEngine {
                 &event.user_id,
                 skill_id,
                 accuracy,
-                event.timestamp,
+                    Utc.timestamp_opt(event.timestamp as i64, 0)
+                        .single()
+                        .ok_or_else(|| {
+                            LearningError::Repository(
+                                RepositoryError::InvalidInput(
+                                    "Failed parse event timestamp".to_string(),
+                                ),
+                            )
+                        })?
             )?;
         }
 
@@ -792,7 +889,15 @@ impl LearningEngine {
                 word_id,
                 correct_answer,
                 None,
-                event.timestamp,
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?,
             )?;
         }
 
@@ -909,7 +1014,15 @@ impl LearningEngine {
                 .clone();
 
         progress.updated_at =
-            event.timestamp;
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?;
 
         self.book_progress_repository
             .upsert(
@@ -943,7 +1056,15 @@ impl LearningEngine {
                 .clone();
 
         progress.updated_at =
-            event.timestamp;
+                Utc.timestamp_opt(event.timestamp as i64, 0)
+                    .single()
+                    .ok_or_else(|| {
+                        LearningError::Repository(
+                            RepositoryError::InvalidInput(
+                                "Failed parse event timestamp".to_string(),
+                            ),
+                        )
+                    })?;
 
         self.book_progress_repository
             .upsert(
@@ -977,7 +1098,15 @@ impl LearningEngine {
                 .clone();
 
         progress.updated_at =
-            event.timestamp;
+            Utc.timestamp_opt(event.timestamp as i64, 0)
+                .single()
+                .ok_or_else(|| {
+                    LearningError::Repository(
+                        RepositoryError::InvalidInput(
+                            "Failed parse event timestamp".to_string(),
+                        ),
+                    )
+                })?;
 
         self.book_progress_repository
             .upsert(
@@ -1023,7 +1152,15 @@ impl LearningEngine {
             *paragraphs_seen as i64;
 
         progress.updated_at =
-            event.timestamp;
+            Utc.timestamp_opt(event.timestamp as i64, 0)
+                .single()
+                .ok_or_else(|| {
+                    LearningError::Repository(
+                        RepositoryError::InvalidInput(
+                            "Failed parse event timestamp".to_string(),
+                        ),
+                    )
+                })?;
 
         self.book_progress_repository
             .upsert(
@@ -1516,7 +1653,7 @@ enum ReviewRating {
 
 fn review_rating(
     correct: bool,
-    response_time_ms: Option<u64>,
+    response_time_ms: Option<i32>,
 ) -> ReviewRating {
     if !correct {
         return ReviewRating::Again;

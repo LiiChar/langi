@@ -37,9 +37,44 @@ async getBook(bookId: string) : Promise<Result<Book, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getBrowserBooks(provider: string) : Promise<Result<Book[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_browser_books", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBrowserBook(provider: string, bookId: string) : Promise<Result<Book, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_browser_book", { provider, bookId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBrowserProviders() : Promise<string[]> {
+    return await TAURI_INVOKE("get_browser_providers");
+},
+async downloadBook(provider: string, bookId: string, format: string) : Promise<Result<Book, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_book", { provider, bookId, format }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getNextActivity() : Promise<Result<LearningActivity, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_next_activity") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async translate(from: string, to: string, text: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("translate", { from, to, text }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -50,6 +85,13 @@ async getNextActivity() : Promise<Result<LearningActivity, string>> {
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+downloadEvent: DownloadEvent,
+learningEvent: LearningEvent
+}>({
+downloadEvent: "download-event",
+learningEvent: "learning-event"
+})
 
 /** user-defined constants **/
 
@@ -58,9 +100,23 @@ async getNextActivity() : Promise<Result<LearningActivity, string>> {
 /** user-defined types **/
 
 export type Book = { id: string; meta: BookMeta; chapters: Chapter[] | null }
-export type BookMeta = { title: string; description: string | null; author: string | null; language: string | null; cover_path: string | null; path: string; size: number; last_read_at: number; last_modified: number; created_at: number; genres: string[] | null }
-export type Chapter = { title: string | null; html: string }
+export type BookMeta = { title: string; description: string | null; author: string | null; language: string | null; cover_path: string | null; path: string; size: number; last_read_at: number; last_modified: number; created_at: number; genres: string[] | null; source: string | null }
+export type Chapter = { id: string; title: string | null; html: string }
+export type DownloadEvent = { id: string; event_type: DownloadEventType; timestamp: number; progress: number; downloaded: number; total: number | null; speed: number; time_remaining: number; total_time: number }
+export type DownloadEventType = "Started" | "Progress" | "Completed" | "Failed"
 export type LearningActivity = { WordReview: { word_ids: string[]; reason: string } } | { Translation: { word_id: string; reason: string } } | { SkillExercise: { skill_id: string; reason: string } } | { ContinueReading: { book_id: string; chapter_id: string; reason: string } } | { ComprehensionExercise: { book_id: string; chapter_id: string; reason: string } } | { Rest: { reason: string } }
+export type LearningEvent = { 
+/**
+ * Уникальный ID события.
+ * 
+ * Нужен для идемпотентности:
+ * одно и то же событие не должно
+ * обработаться дважды.
+ */
+id: string; user_id: string; event_type: LearningEventType; timestamp: number; context: LearningEventContext; data: LearningEventData }
+export type LearningEventContext = { book_id: string | null; chapter_id: string | null; element_id: string | null; word_id: string | null; exercise_id: string | null; question_id: string | null; skill_id: string | null }
+export type LearningEventData = "Empty" | { Word: { surface: string | null } } | { QuestionAnswered: { correct: boolean; response_time_ms: number | null; selected_answer: string | null; word_ids: string[]; skill_ids: string[] } } | { ExerciseCompleted: { correct: number; total: number; duration_ms: number | null; skill_ids: string[]; word_ids: string[] } } | { ReadingSession: { seconds: number; paragraphs_seen: number } } | { Paragraph: { word_count: number } }
+export type LearningEventType = "WordSeen" | "TranslationOpened" | "FavoriteAdded" | "FavoriteRemoved" | "MarkedKnown" | "MarkedUnknown" | "QuestionAnswered" | "ExerciseStarted" | "ExerciseCompleted" | "ExerciseSkipped" | "ChapterOpened" | "ChapterCompleted" | "ParagraphSeen" | "ReadingSessionStarted" | "ReadingSessionFinished"
 export type ParseBooksResponse = { books: Book[]; errors: string[] }
 
 /** tauri-specta globals **/

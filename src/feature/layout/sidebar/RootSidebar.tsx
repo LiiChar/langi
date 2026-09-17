@@ -12,12 +12,15 @@ import {
 } from "#ui/sidebar"
 
 import * as React from "react"
-import { AudioLines, Book, ChartArea, Goal, Leaf, Library, Mail, Settings } from "lucide-react"
+import { AudioLines, Book, ChartArea, Earth, Goal, Leaf, Library, Mail, Settings } from "lucide-react"
 
 import { User } from "@/entities/user/user.type"
 import { useLayoutStore } from "../store/LayoutStore"
 import { SidebarUser } from "./SidebarUser"
-import { Link } from "@tanstack/react-router"
+import { Link, useLocation, useRouter } from "@tanstack/react-router"
+import { cn } from "cn"
+import { useReaderStore } from "@/feature/reader/store/ReaderStore"
+import { SidebarBook } from "./SidebarBook"
 
 type Item = {
   title: string,
@@ -26,15 +29,16 @@ type Item = {
 }
 
 export const links: Item[] = [
-  {
-    icon: <Book />,
-    title: "Reading",
-    link: "/reading",
-  },
+
   {
     icon: <Library />,
     title: "Library",
     link: "/",
+  },
+  {
+    icon: <Earth />,
+    title: "Browser",
+    link: "/browser",
   },
   {
     icon: <AudioLines />,
@@ -79,20 +83,25 @@ export function RootSidebar(
     (state) => state.sidebarMode
   )
 
+  const { pathname } = useLocation();
+
   const user: User = {
-    id: "1",
+    id: "0",
     name: "shadcn",
     email: "m@example.com",
     avatar: "https://ui.shadcn.com/avatars/shadcn.jpg",
   }
 
+  let book = useReaderStore((store) => store.book);
+
+
   return (
     <Sidebar
       {...props}
       collapsible={collapsible}
-      className="border-none"
+      className="border-none "
     >
-      <SidebarHeader>
+      <SidebarHeader className="bg-secondary!">
         <SidebarMenuButton
           className="
             justify-start
@@ -113,7 +122,7 @@ export function RootSidebar(
         </SidebarMenuButton>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="bg-secondary!">
         <SidebarGroup>
           <SidebarGroupContent className="flex flex-col gap-2">
             <SidebarMenu>
@@ -121,6 +130,7 @@ export function RootSidebar(
                 <SidebarItem
                   key={item.title}
                   item={item}
+                  active={pathname === item.link}
                 />
               ))}
             </SidebarMenu>
@@ -128,7 +138,9 @@ export function RootSidebar(
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="group-data-[collapsible=icon]:translate-x-1.5">
+      <SidebarFooter className=" bg-secondary!">
+        {book && <SidebarBook book={book} />}
+
         <SidebarUser user={user} />
       </SidebarFooter>
 
@@ -138,16 +150,18 @@ export function RootSidebar(
 }
 
 export type SidebarItemType = {
-  item: Item
+  item: Item,
+  active: boolean,
 }
 
 export function SidebarItem({
   item,
+  active
 }: SidebarItemType) {
   return (
-    <Link to={item.link}>
+    <Link to={item.link} activeProps={{className: "text-red"}}>
       <SidebarMenuItem className="group-data-[collapsible=icon]:h-[40px]">
-        <SidebarMenuButton tooltip={item.title} className="group-data-[collapsible=icon]:min-w-[40px] group-data-[collapsible=icon]:min-h-[40px] " >
+        <SidebarMenuButton tooltip={item.title} className={cn("group-data-[collapsible=icon]:min-w-[40px] group-data-[collapsible=icon]:min-h-[40px]", { "bg-background! hover:bg-secondary/30": active  })}>
           <div className="group-data-[collapsible=icon]:translate-x-1 group-data-[collapsible=icon]:scale-125">
 
           {item.icon}

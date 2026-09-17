@@ -1,3 +1,4 @@
+import { useReaderSelection } from "../hooks/useReaderSelection";
 import { ContentElement } from "../lib/paragraph";
 import { CodeElement } from "./CodeElement";
 import { HeadingElement } from "./HeadingElement";
@@ -6,12 +7,14 @@ import { QuestionElement } from "./QuestionElement";
 
 export const ContentRenderer = ({
   element,
+  selection
 }: {
-  element: ContentElement;
+    element: ContentElement;
+  selection: ReturnType<typeof useReaderSelection>;
 }) => {
   switch (element.type) {
     case "paragraph":
-      return <ParagraphElement element={element} />;
+      return <ParagraphElement element={element} selection={selection} />;
 
     case "question":
       return <QuestionElement element={element} />;

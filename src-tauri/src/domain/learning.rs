@@ -8,6 +8,7 @@ use serde::{
     Serialize,
 };
 use specta::Type;
+use tauri_specta::Event;
 
 //
 // LEARNING EVENT
@@ -18,6 +19,8 @@ use specta::Type;
     Clone,
     Deserialize,
     Serialize,
+    Type,
+    Event,
 )]
 pub struct LearningEvent {
     /// Уникальный ID события.
@@ -31,7 +34,7 @@ pub struct LearningEvent {
 
     pub event_type: LearningEventType,
 
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: i32,
 
     pub context: LearningEventContext,
 
@@ -47,6 +50,8 @@ pub struct LearningEvent {
     Clone,
     Deserialize,
     Serialize,
+    Type,
+    Event,
 )]
 pub enum LearningEventType {
     //
@@ -102,6 +107,8 @@ pub enum LearningEventType {
     Default,
     Deserialize,
     Serialize,
+    Type,
+    Event,
 )]
 pub struct LearningEventContext {
     pub book_id: Option<String>,
@@ -129,6 +136,8 @@ pub struct LearningEventContext {
     Default,
     Deserialize,
     Serialize,
+    Type,
+    Event,
 )]
 pub enum LearningEventData {
     #[default]
@@ -149,7 +158,7 @@ pub enum LearningEventData {
     QuestionAnswered {
         correct: bool,
 
-        response_time_ms: Option<u64>,
+        response_time_ms: Option<i32>,
 
         selected_answer: Option<String>,
 
@@ -167,7 +176,7 @@ pub enum LearningEventData {
 
         total: u32,
 
-        duration_ms: Option<u64>,
+        duration_ms: Option<i32>,
 
         skill_ids: Vec<String>,
 

@@ -7,11 +7,12 @@ pub use import::{
     ImportBooksService,
 };
 
-use crate::{application::books::parse::ParseBookService, infrastructure::{database::repository::book::sqlite_book::SqliteBookRepository, document_parser::DocumentBookParser, filesystem::FileSystemBookScanner}};
+use crate::{application::books::parse::ParseBookService, infrastructure::{browser::service::BrowserService, database::repository::book::sqlite_book::SqliteBookRepository, document_parser::DocumentBookParser, filesystem::FileSystemBookScanner}};
 
 pub struct BookServices {
     pub parse: ParseBookService<DocumentBookParser, FileSystemBookScanner>,
     pub import: ImportBooksService<
         SqliteBookRepository,
     >,
+    pub browser: BrowserService,
 }

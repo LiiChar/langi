@@ -99,6 +99,7 @@ impl SqliteBookRepository {
                     .execute(
                         "
                         INSERT INTO chapters (
+                            id,
                             book_id,
                             chapter_index,
                             title,
@@ -108,10 +109,12 @@ impl SqliteBookRepository {
                             ?1,
                             ?2,
                             ?3,
-                            ?4
+                            ?4,
+                            ?5
                         )
                         ",
                         params![
+                            chapter.id,
                             book.id,
                             index as i64,
                             chapter.title,
@@ -147,6 +150,7 @@ impl SqliteBookRepository {
                 last_modified: row.get("last_modified")?,
                 created_at: row.get("created_at")?,
                 genres: None,
+                source: None,
             },
 
             chapters: None,
@@ -162,6 +166,7 @@ impl SqliteBookRepository {
                 .prepare(
                     "
                     SELECT
+                        id,
                         title,
                         html
                     FROM chapters
@@ -181,6 +186,7 @@ impl SqliteBookRepository {
                     [book_id],
                     |row| {
                         Ok(Chapter {
+                            id: row.get("id")?,
                             title: row.get(
                                 "title"
                             )?,

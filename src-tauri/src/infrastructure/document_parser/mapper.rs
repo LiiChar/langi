@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use document_parser::{ChapterContent, Document};
+use uuid::Uuid;
 
 use crate::domain::{Book, BookMeta, Chapter};
 
@@ -19,6 +20,7 @@ impl DocumentMapper {
             .chapters
             .into_iter()
             .map(|chapter| Chapter {
+                id: Uuid::new_v4().to_string(),
                 title: chapter.title,
                 html: match chapter.content {
                     ChapterContent::Html(html) => html,
@@ -41,6 +43,7 @@ impl DocumentMapper {
                 last_modified,
                 created_at,
                 genres: None,
+                source: None
             },
             chapters: Some(chapters),
         }
