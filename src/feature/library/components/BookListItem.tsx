@@ -79,9 +79,11 @@ export function BookListItem({
       </div>
 
       {/* Chapters count */}
-      <span className="text-xs text-muted-foreground shrink-0 relative z-10">
-        {book.chapters?.length ?? 0} глав
-      </span>
+      {book.chapters && book.chapters?.length != 0 &&
+        <span className="text-xs text-muted-foreground shrink-0 relative z-10">
+          {book.chapters?.length ?? 0} глав
+        </span>
+      }
 
       {/* Arrow */}
       <ChevronRight

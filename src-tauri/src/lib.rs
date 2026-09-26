@@ -3,10 +3,10 @@ use std::{path::PathBuf, sync::Arc};
 use application::books::parse::ParseBookService;
 use infrastructure::{document_parser::DocumentBookParser, filesystem::FileSystemBookScanner};
 use specta_typescript::Typescript;
-use tauri::Manager;
+use tauri::{Manager, path::BaseDirectory};
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
-use crate::{application::books::{BookServices, ImportBooksService}, domain::{book::DownloadEvent, learning::LearningEvent}, infrastructure::{browser::create_browser_service, database::{repository::{book::{sqlite_book::SqliteBookRepository, sqlite_book_reading_progress::SqliteBookReadingProgressRepository}, learning::{sqlite_learning_event::SqliteLearningEventRepository, sqlite_user_level::SqliteUserLevelRepository, sqlite_user_skill::SqliteUserSkillRepository, sqlite_user_word::SqliteUserWordRepository}}, sqlite::{DatabaseError, SqliteDatabase}}, learning::engine::LearningEngine, translate::{TranslationService, create_translation_service}}};
+use crate::{application::books::{BookServices, ImportBooksService}, domain::{book::DownloadEvent, learning::LearningEvent}, infrastructure::{browser::create_browser_service, config::ConfigService, database::{repository::{book::{sqlite_book::SqliteBookRepository, sqlite_book_reading_progress::SqliteBookReadingProgressRepository}, learning::{sqlite_learning_event::SqliteLearningEventRepository, sqlite_user_level::SqliteUserLevelRepository, sqlite_user_skill::SqliteUserSkillRepository, sqlite_user_word::SqliteUserWordRepository}}, sqlite::{DatabaseError, SqliteDatabase}}, learning::engine::LearningEngine, translate::{TranslationService, create_translation_service}}};
 
 pub mod application;
 pub mod commands;
@@ -17,6 +17,7 @@ pub struct AppState {
     pub book: BookServices,
     pub learning_engine: LearningEngine,
     pub translator: TranslationService,
+    pub config: ConfigService
 }
 
 impl AppState {
@@ -47,6 +48,8 @@ impl AppState {
 
         let browser = create_browser_service().unwrap();
 
+        let config = ConfigService::new("../../config.toml").unwrap();
+
         Self {
             book: BookServices {
                 import: books,
@@ -55,6 +58,7 @@ impl AppState {
             },
             learning_engine: learning_engine,
             translator,
+            config
         }
     }
 }
@@ -77,7 +81,17 @@ pub fn run() {
             crate::commands::books::get_browser_providers,
             crate::commands::books::download_book,
             crate::commands::learning::get_next_activity,
-            crate::commands::translate::translate
+            crate::commands::translate::translate,
+            crate::commands::config::get_config,
+            crate::commands::config::update_config,
+            crate::commands::config::update_general_config,
+            crate::commands::config::update_download_config,
+            crate::commands::config::update_translate_config,
+            crate::commands::config::update_reader_config,
+            crate::commands::config::update_learning_config,
+            crate::commands::config::reset_config,
+            crate::commands::config::reload_config,
+            crate::commands::config::get_config_path,
         ])
         .events(collect_events![LearningEvent, DownloadEvent]);
 

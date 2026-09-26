@@ -1,15 +1,32 @@
-import { useCallback, useEffect, useRef } from "react";
-import { commands } from "@/shared/commands/bindings";
+import {
+  useCallback,
+  useRef,
+} from "react";
+
+import {
+  ContentElement,
+  ParagraphElementType,
+} from "../lib/paragraph";
+
+import {
+  extractWordsFromHtml,
+} from "./useWordWrappedHtml";
+
 import { useReaderStore } from "../store/ReaderStore";
-import { ContentElement, ParagraphElementType } from "../lib/paragraph";
+
+import {
+  useTranslationStore,
+} from "../store/TranslationStore";
 
 export type SelectionPosition = {
+  chapterIndex: number;
   elementIndex: number;
   wordIndex: number;
 };
 
-type CompletedElement = {
+export type CompletedElement = {
   element: ContentElement;
+  chapterIndex: number;
   elementIndex: number;
 };
 
@@ -19,346 +36,469 @@ const isParagraphElement = (
   return element.type === "paragraph";
 };
 
-const parsePosition = (
-  value: string | null,
-): SelectionPosition | null => {
-  if (!value) {
-    return null;
-  }
-
-  const [elementIndexRaw, wordIndexRaw] = value.split("-");
-
-  const elementIndex = Number(elementIndexRaw);
-  const wordIndex = Number(wordIndexRaw);
-
-  if (
-    !Number.isInteger(elementIndex) ||
-    !Number.isInteger(wordIndex)
-  ) {
-    return null;
-  }
-
-  return {
-    elementIndex,
-    wordIndex,
-  };
-};
-
-const formatPosition = (
+export const getReaderWordId = (
   position: SelectionPosition,
 ): string => {
-  return `${position.elementIndex}-${position.wordIndex}`;
+  return [
+    "reader-word",
+    position.chapterIndex,
+    position.elementIndex,
+    position.wordIndex,
+  ].join("-");
+};
+
+const comparePositions = (
+  a: SelectionPosition,
+  b: SelectionPosition,
+): number => {
+  if (
+    a.chapterIndex !==
+    b.chapterIndex
+  ) {
+    return (
+      a.chapterIndex -
+      b.chapterIndex
+    );
+  }
+
+  if (
+    a.elementIndex !==
+    b.elementIndex
+  ) {
+    return (
+      a.elementIndex -
+      b.elementIndex
+    );
+  }
+
+  return (
+    a.wordIndex -
+    b.wordIndex
+  );
+};
+
+const normalizeRange = (
+  start: SelectionPosition,
+  end: SelectionPosition,
+): [
+  SelectionPosition,
+  SelectionPosition,
+] => {
+  if (
+    comparePositions(start, end) <= 0
+  ) {
+    return [start, end];
+  }
+
+  return [end, start];
+};
+
+const getElementWords = (
+  element: ContentElement,
+) => {
+  if (!isParagraphElement(element)) {
+    return [];
+  }
+
+  return extractWordsFromHtml(
+    element.text,
+  );
+};
+
+const getRangeIds = (
+  elements: CompletedElement[],
+  start: SelectionPosition,
+  end: SelectionPosition,
+): string[] => {
+  const [
+    rangeStart,
+    rangeEnd,
+  ] = normalizeRange(start, end);
+
+  const result: string[] = [];
+
+  for (const item of elements) {
+    const elementPosition: SelectionPosition =
+      {
+        chapterIndex:
+          item.chapterIndex,
+        elementIndex:
+          item.elementIndex,
+        wordIndex: 0,
+      };
+
+    const elementEndPosition: SelectionPosition =
+      {
+        chapterIndex:
+          item.chapterIndex,
+        elementIndex:
+          item.elementIndex,
+        wordIndex: Number.MAX_SAFE_INTEGER,
+      };
+
+    /*
+     * Элемент находится до диапазона.
+     */
+    if (
+      comparePositions(
+        elementEndPosition,
+        rangeStart,
+      ) < 0
+    ) {
+      continue;
+    }
+
+    /*
+     * Элемент находится после диапазона.
+     */
+    if (
+      comparePositions(
+        elementPosition,
+        rangeEnd,
+      ) > 0
+    ) {
+      continue;
+    }
+
+    const words =
+      getElementWords(
+        item.element,
+      );
+
+    if (!words.length) {
+      continue;
+    }
+
+    let from = 0;
+    let to =
+      words.length - 1;
+
+    if (
+      item.chapterIndex ===
+        rangeStart.chapterIndex &&
+      item.elementIndex ===
+        rangeStart.elementIndex
+    ) {
+      from = Math.max(
+        0,
+        Math.min(
+          rangeStart.wordIndex,
+          words.length - 1,
+        ),
+      );
+    }
+
+    if (
+      item.chapterIndex ===
+        rangeEnd.chapterIndex &&
+      item.elementIndex ===
+        rangeEnd.elementIndex
+    ) {
+      to = Math.max(
+        0,
+        Math.min(
+          rangeEnd.wordIndex,
+          words.length - 1,
+        ),
+      );
+    }
+
+    if (from > to) {
+      continue;
+    }
+
+    for (
+      let wordIndex = from;
+      wordIndex <= to;
+      wordIndex++
+    ) {
+      result.push(
+        getReaderWordId({
+          chapterIndex:
+            item.chapterIndex,
+          elementIndex:
+            item.elementIndex,
+          wordIndex,
+        }),
+      );
+    }
+  }
+
+  return result;
 };
 
 const getSelectedText = (
   elements: CompletedElement[],
-  start: SelectionPosition,
-  end: SelectionPosition,
+  selectedIds: string[],
 ): string | null => {
-  let startPosition = start;
-  let endPosition = end;
-
-  /**
-   * Если пользователь выделил справа налево,
-   * меняем начало и конец местами.
-   */
-  if (
-    startPosition.elementIndex > endPosition.elementIndex ||
-    (
-      startPosition.elementIndex === endPosition.elementIndex &&
-      startPosition.wordIndex > endPosition.wordIndex
-    )
-  ) {
-    [startPosition, endPosition] = [
-      endPosition,
-      startPosition,
-    ];
+  if (!selectedIds.length) {
+    return null;
   }
 
-  /**
-   * Один paragraph.
-   */
-  if (
-    startPosition.elementIndex === endPosition.elementIndex
-  ) {
-    const item = elements[startPosition.elementIndex];
+  const wordsById =
+    new Map<string, string>();
 
-    if (!item || !isParagraphElement(item.element)) {
-      return null;
+  for (const item of elements) {
+    const words =
+      getElementWords(
+        item.element,
+      );
+
+    for (
+      let wordIndex = 0;
+      wordIndex < words.length;
+      wordIndex++
+    ) {
+      const id =
+        getReaderWordId({
+          chapterIndex:
+            item.chapterIndex,
+          elementIndex:
+            item.elementIndex,
+          wordIndex,
+        });
+
+      for (
+        let wordIndex = 0;
+        wordIndex < words.length;
+        wordIndex++
+      ) {
+        const id =
+          getReaderWordId({
+            chapterIndex:
+              item.chapterIndex,
+            elementIndex:
+              item.elementIndex,
+            wordIndex,
+          });
+
+        wordsById.set(
+          id,
+          words[wordIndex],
+        );
+      }
     }
-
-    const words = item.element.text.split(/\s+/);
-
-    return words
-      .slice(
-        startPosition.wordIndex,
-        endPosition.wordIndex + 1,
-      )
-      .join(" ");
   }
 
-  /**
-   * Первый paragraph.
-   */
-  const first = elements[startPosition.elementIndex];
-
-  if (!first || !isParagraphElement(first.element)) {
-    return null;
-  }
-
-  const firstWords = first.element.text.split(/\s+/);
-
-  const firstText = firstWords
-    .slice(startPosition.wordIndex)
-    .join(" ");
-
-  /**
-   * Последний paragraph.
-   */
-  const last = elements[endPosition.elementIndex];
-
-  if (!last || !isParagraphElement(last.element)) {
-    return null;
-  }
-
-  const lastWords = last.element.text.split(/\s+/);
-
-  const lastText = lastWords
-    .slice(0, endPosition.wordIndex + 1)
-    .join(" ");
-
-  /**
-   * Paragraphs между началом и концом.
-   */
-  const middleText = elements
-    .slice(
-      startPosition.elementIndex + 1,
-      endPosition.elementIndex,
+  const text = selectedIds
+    .map((id) =>
+      wordsById.get(id),
     )
-    .filter(({ element }) => isParagraphElement(element))
-    .map(({ element }) => (element as any).text.split(/\s+/).join(" "))
+    .filter(
+      (
+        word,
+      ): word is string =>
+        Boolean(word),
+    )
     .join(" ");
 
-  return [
-    firstText,
-    middleText,
-    lastText,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return text || null;
 };
 
 export const useReaderSelection = (
   completedElements: CompletedElement[],
 ) => {
-  const selectedStart = useReaderStore(
-    (state) => state.selectedStart,
-  );
-
-  const selectedEnd = useReaderStore(
-    (state) => state.selectedEnd,
-  );
-
-  const setSelectedStart = useReaderStore(
-    (state) => state.setSelectedStart,
-  );
-
-  const setSelectedEnd = useReaderStore(
-    (state) => state.setSelectedEnd,
-  );
-
-  const setTranslation = useReaderStore(
-    (state) => state.setTranslation,
-  );
-
-  /**
-   * Реальная позиция начала выделения.
-   *
-   * Ref нужен потому, что Zustand state обновляется
-   * не синхронно с mouse event.
-   */
-  const selectionStartRef =
-    useRef<SelectionPosition | null>(null);
-
-  const isSelectingRef = useRef(false);
-
-  /**
-   * Начало выделения.
-   */
-  const startSelection = useCallback(
-    (elementIndex: number, wordIndex: number) => {
-      const position = {
-        elementIndex,
-        wordIndex,
-      };
-
-      selectionStartRef.current = position;
-      isSelectingRef.current = false;
-
-      setSelectedStart(formatPosition(position));
-      setSelectedEnd(formatPosition(position));
-    },
-    [
-      setSelectedStart,
-      setSelectedEnd,
-    ],
-  );
-
-  /**
-   * Наведение на слово во время drag selection.
-   */
-  const updateSelection = useCallback(
-    (elementIndex: number, wordIndex: number) => {
-      const start = selectionStartRef.current;
-
-      if (!start) {
-        return;
-      }
-
-      const end = {
-        elementIndex,
-        wordIndex,
-      };
-
-      if (
-        start.elementIndex !== end.elementIndex ||
-        start.wordIndex !== end.wordIndex
-      ) {
-        isSelectingRef.current = true;
-      }
-
-      setSelectedEnd(formatPosition(end));
-    },
-    [setSelectedEnd],
-  );
-
-  /**
-   * Завершение выделения.
-   *
-   * Возвращает true, если был selection,
-   * false — если это обычный клик по слову.
-   */
-  const finishSelection = useCallback(
-    (elementIndex: number, wordIndex: number) => {
-      const start = selectionStartRef.current;
-
-      if (!start) {
-        return false;
-      }
-
-      const end = {
-        elementIndex,
-        wordIndex,
-      };
-
-      const wasSelecting = isSelectingRef.current;
-
-      if (wasSelecting) {
-        setSelectedEnd(formatPosition(end));
-      } else {
-        setSelectedStart(null);
-        setSelectedEnd(null);
-      }
-
-      selectionStartRef.current = null;
-      isSelectingRef.current = false;
-
-      return wasSelecting;
-    },
-    [
-      setSelectedStart,
-      setSelectedEnd,
-    ],
-  );
-
-  /**
-   * Нужно ли считать слово частью текущего selection.
-   */
-  const isSelected = useCallback(
-    (elementIndex: number, wordIndex: number) => {
-      if (!selectedStart || !selectedEnd) {
-        return false;
-      }
-
-      const [startChapter, startWord] = selectedStart.split("-").map(Number);
-      const [endChapter, endWord] = selectedEnd.split("-").map(Number);
-
-      const positionChapter = elementIndex;
-      const positionWord = wordIndex;
-
-      const isAfterStart =
-        positionChapter > startChapter ||
-        (positionChapter === startChapter && positionWord >= startWord);
-
-      const isBeforeEnd =
-        positionChapter < endChapter ||
-        (positionChapter === endChapter && positionWord <= endWord);
-
-      return isAfterStart && isBeforeEnd;
-    },
-    [selectedStart, selectedEnd],
-  );
-
-  /**
-   * Перевод текущего выделения.
-   */
-  useEffect(() => {
-    const start = parsePosition(selectedStart);
-    const end = parsePosition(selectedEnd);
-
-    if (!start || !end) {
-      return;
-    }
-
-    const text = getSelectedText(
-      completedElements,
-      start,
-      end,
+  const selectedIds =
+    useReaderStore(
+      (state) =>
+        state.selectedIds,
     );
 
-    if (!text) {
-      return;
-    }
+  const setSelectedIds =
+    useReaderStore(
+      (state) =>
+        state.setSelectedIds,
+    );
 
-    let cancelled = false;
+  const closePopup =
+    useTranslationStore(
+      (state) => state.close,
+    );
 
-    const translate = async () => {
-      const result = await commands.translate(
-        "en",
-        "ru",
-        text,
+  const selectionStartRef =
+    useRef<SelectionPosition | null>(
+      null,
+    );
+
+  const isSelectingRef =
+    useRef(false);
+
+  const startSelection =
+    useCallback(
+      (
+        chapterIndex: number,
+        elementIndex: number,
+        wordIndex: number,
+      ) => {
+        const position: SelectionPosition =
+          {
+            chapterIndex,
+            elementIndex,
+            wordIndex,
+          };
+
+        selectionStartRef.current =
+          position;
+
+        isSelectingRef.current =
+          false;
+
+        setSelectedIds([
+          getReaderWordId(position),
+        ]);
+
+        closePopup();
+      },
+      [
+        setSelectedIds,
+        closePopup,
+      ],
+    );
+
+  const updateSelection =
+    useCallback(
+      (
+        chapterIndex: number,
+        elementIndex: number,
+        wordIndex: number,
+      ) => {
+        const start =
+          selectionStartRef.current;
+
+        if (!start) {
+          return;
+        }
+
+        const end: SelectionPosition = {
+          chapterIndex,
+          elementIndex,
+          wordIndex,
+        };
+
+        if (
+          comparePositions(
+            start,
+            end,
+          ) !== 0
+        ) {
+          isSelectingRef.current =
+            true;
+        }
+
+        const ids =
+          getRangeIds(
+            completedElements,
+            start,
+            end,
+          );
+
+        setSelectedIds(ids);
+      },
+      [
+        completedElements,
+        setSelectedIds,
+      ],
+    );
+
+  const finishSelection =
+    useCallback(
+      (
+        chapterIndex: number,
+        elementIndex: number,
+        wordIndex: number,
+      ) => {
+        const start =
+          selectionStartRef.current;
+
+        if (!start) {
+          return null;
+        }
+
+        const end: SelectionPosition = {
+          chapterIndex,
+          elementIndex,
+          wordIndex,
+        };
+
+        const wasSelecting =
+          isSelectingRef.current;
+
+        selectionStartRef.current = null;
+        isSelectingRef.current = false;
+
+        if (!wasSelecting) {
+          setSelectedIds([]);
+          closePopup();
+
+          return {
+            type: "word" as const,
+          };
+        }
+
+        const [
+          rangeStart,
+          rangeEnd,
+        ] = normalizeRange(
+          start,
+          end,
+        );
+
+        const ids =
+          getRangeIds(
+            completedElements,
+            rangeStart,
+            rangeEnd,
+          );
+
+        const text =
+          getSelectedText(
+            completedElements,
+            ids,
+          );
+
+        setSelectedIds(ids);
+
+        if (!text) {
+          return null;
+        }
+
+        return {
+          type: "selection" as const,
+          start: rangeStart,
+          end: rangeEnd,
+          text,
+          ids,
+        };
+      },
+      [
+        completedElements,
+        setSelectedIds,
+        closePopup,
+      ],
+    );
+
+  const isSelected = useCallback(
+    (id: string) => {
+      return selectedIds.includes(id);
+    },
+    [selectedIds],
+  );
+
+  const isSelectionStarted =
+    useCallback(() => {
+      return (
+        selectionStartRef.current !== null
       );
-
-      if (
-        cancelled ||
-        result.status === "error"
-      ) {
-        return;
-      }
-
-      setTranslation(result.data);
-    };
-
-    translate();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    selectedStart,
-    selectedEnd,
-    completedElements,
-    setTranslation,
-  ]);
+    }, []);
 
   return {
-    selectedStart,
-    selectedEnd,
+    selectedIds,
 
     startSelection,
     updateSelection,
     finishSelection,
 
     isSelected,
+    isSelectionStarted,
   };
 };

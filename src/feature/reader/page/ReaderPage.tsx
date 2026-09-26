@@ -1,6 +1,6 @@
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useReader } from "../hooks/useReader";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ContentRenderer } from "../components/ContentRenderer";
 import { events, LearningEventData, LearningEventType } from "@/shared/commands/bindings";
 import { useAutoScroll } from "#hooks/index";
@@ -8,6 +8,7 @@ import { useReaderStore } from "../store/ReaderStore";
 import { useReaderSelection } from "../hooks/useReaderSelection";
 import { convertBook } from "@/shared/commands/import";
 import { Button } from "#ui/button";
+import { TranslationPopover } from "../components/TranslationPopover";
 
 export const ReaderPage = () => {
   const routeApi = getRouteApi("/book/$bookId/read/");
@@ -20,6 +21,8 @@ export const ReaderPage = () => {
   const seenParagraphs = useRef<Set<string>>(new Set());
 
   const setStoreBook = useReaderStore((state) => state.setBook);
+  const setElements = useReaderStore((state) => state.setElements);
+  const selectedIds = useReaderStore((state) => state.selectedIds);
 
   if (data.status === "error") {
     navigate({ to: "/" });
@@ -46,8 +49,22 @@ export const ReaderPage = () => {
     completedElements,
   );
 
-  const ref = useAutoScroll<HTMLDivElement>();
+  
+  const readerBoundaryRef =
+  useRef<HTMLDivElement | null>(null);
 
+  const [readerBoundary, setReaderBoundary] =
+    useState<HTMLDivElement | null>(null);
+  
+  useAutoScroll(readerBoundaryRef);
+
+  const setReaderBoundaryRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      readerBoundaryRef.current = element;
+      setReaderBoundary(element);
+    },
+    [],
+  );
   /**
    * Отправка события.
    *
@@ -89,6 +106,7 @@ export const ReaderPage = () => {
    */
   useEffect(() => {
     setStoreBook(book);
+    setElements(completedElements);
     sessionStartedAt.current = Date.now();
 
     emitLearningEvent("ReadingSessionStarted", "Empty");
@@ -166,26 +184,31 @@ export const ReaderPage = () => {
     <div className="flex gap-1 h-full flex-col relative">
       <div
         className="p-4 flex h-full justify-center items-center window"
-        ref={ref}
+        ref={setReaderBoundaryRef}
       >
         <div className="w-[90%] h-full">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 select-none">
             {completedElements.slice(0, -1).map((element) => (
               <ContentRenderer
                 element={element.element}
                 key={element.chapterIndex + "-" + element.elementIndex}
                 selection={selection}
+                chapterIndex={element.chapterIndex}
+                elementIndex={element.elementIndex}
               />
             ))}
-            <div className="">
+            <div className="mb-3">
               {completedElements.slice(-1).map((element) => (
                 <ContentRenderer
                   element={element.element}
                   key={element.chapterIndex + "-" + element.elementIndex}
                   selection={selection}
+                  chapterIndex={element.chapterIndex}
+                  elementIndex={element.elementIndex}
                 />
               ))}
             </div>
+             <TranslationPopover collisionBoundary={readerBoundary} />
           </div>
         </div>
       </div>

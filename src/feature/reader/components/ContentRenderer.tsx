@@ -5,16 +5,24 @@ import { HeadingElement } from "./HeadingElement";
 import { ParagraphElement } from "./ParagraphElement";
 import { QuestionElement } from "./QuestionElement";
 
+export type ContentRendererProps = {
+  element: ContentElement;
+  chapterIndex: number;
+  elementIndex: number;
+  selection: ReturnType<
+    typeof useReaderSelection
+  >;
+};
+
 export const ContentRenderer = ({
   element,
+  chapterIndex,
+  elementIndex, 
   selection
-}: {
-    element: ContentElement;
-  selection: ReturnType<typeof useReaderSelection>;
-}) => {
+}: ContentRendererProps) => {
   switch (element.type) {
     case "paragraph":
-      return <ParagraphElement element={element} selection={selection} />;
+      return <ParagraphElement element={element} selection={selection} chapterIndex={chapterIndex} elementIndex={elementIndex} />;
 
     case "question":
       return <QuestionElement element={element} />;

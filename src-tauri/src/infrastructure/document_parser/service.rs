@@ -20,6 +20,7 @@ impl DocumentBookParser {
     pub fn new() -> Self {
         let options = ParseOptions {
             content_type: ContentType::Html,
+
             ..Default::default()
         };
 

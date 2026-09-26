@@ -79,6 +79,81 @@ async translate(from: string, to: string, text: string) : Promise<Result<string,
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async getConfig() : Promise<Result<Config, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_config") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateConfig(config: Config) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateGeneralConfig(config: GeneralConfig) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_general_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateDownloadConfig(config: DownloadConfig) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_download_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateTranslateConfig(config: TranslateConfig) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_translate_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateReaderConfig(config: ReaderConfig) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_reader_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateLearningConfig(config: LearningConfig) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_learning_config", { config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resetConfig() : Promise<Result<Config, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_config") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async reloadConfig() : Promise<Result<Config, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reload_config") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getConfigPath() : Promise<string> {
+    return await TAURI_INVOKE("get_config_path");
 }
 }
 
@@ -102,9 +177,54 @@ learningEvent: "learning-event"
 export type Book = { id: string; meta: BookMeta; chapters: Chapter[] | null }
 export type BookMeta = { title: string; description: string | null; author: string | null; language: string | null; cover_path: string | null; path: string; size: number; last_read_at: number; last_modified: number; created_at: number; genres: string[] | null; source: string | null }
 export type Chapter = { id: string; title: string | null; html: string }
+export type Config = { general: GeneralConfig; download: DownloadConfig; translate: TranslateConfig; reader: ReaderConfig; learning: LearningConfig }
+export type DownloadConfig = { 
+/**
+ * Максимальное количество одновременных загрузок
+ */
+max_concurrent_downloads: number; 
+/**
+ * Таймаут HTTP-запроса в секундах
+ */
+request_timeout_secs: number; 
+/**
+ * Количество повторных попыток
+ */
+max_retries: number; 
+/**
+ * Размер буфера загрузки
+ */
+buffer_size: number; 
+/**
+ * Автоматически продолжать прерванную загрузку
+ */
+resume_downloads: boolean; 
+/**
+ * Папка для загруженных книг
+ */
+books_dir: string; 
+/**
+ * Папка для временных файлов
+ */
+temp_dir: string; 
+/**
+ * Сохранять обложки книг
+ */
+download_covers: boolean; 
+/**
+ * Максимальный размер книги в MB
+ */
+max_book_size_mb: number; 
+/**
+ * Включённые источники книг
+ */
+enabled_sources: string[] }
 export type DownloadEvent = { id: string; event_type: DownloadEventType; timestamp: number; progress: number; downloaded: number; total: number | null; speed: number; time_remaining: number; total_time: number }
 export type DownloadEventType = "Started" | "Progress" | "Completed" | "Failed"
+export type ExercisesConfig = { enabled: boolean; translation: boolean; comprehension: boolean; words_per_exercise: number; max_per_session: number }
+export type GeneralConfig = { language: string; auto_update: boolean; telemetry_enabled: boolean; data_dir: string; cache_dir: string; log_level: LogLevel }
 export type LearningActivity = { WordReview: { word_ids: string[]; reason: string } } | { Translation: { word_id: string; reason: string } } | { SkillExercise: { skill_id: string; reason: string } } | { ContinueReading: { book_id: string; chapter_id: string; reason: string } } | { ComprehensionExercise: { book_id: string; chapter_id: string; reason: string } } | { Rest: { reason: string } }
+export type LearningConfig = { enabled: boolean; auto_add_words: boolean; auto_mark_known_words: boolean; adaptive_learning: boolean; exercises: ExercisesConfig; review: ReviewConfig; show_hints: boolean; show_statistics: boolean }
 export type LearningEvent = { 
 /**
  * Уникальный ID события.
@@ -117,7 +237,16 @@ id: string; user_id: string; event_type: LearningEventType; timestamp: number; c
 export type LearningEventContext = { book_id: string | null; chapter_id: string | null; element_id: string | null; word_id: string | null; exercise_id: string | null; question_id: string | null; skill_id: string | null }
 export type LearningEventData = "Empty" | { Word: { surface: string | null } } | { QuestionAnswered: { correct: boolean; response_time_ms: number | null; selected_answer: string | null; word_ids: string[]; skill_ids: string[] } } | { ExerciseCompleted: { correct: number; total: number; duration_ms: number | null; skill_ids: string[]; word_ids: string[] } } | { ReadingSession: { seconds: number; paragraphs_seen: number } } | { Paragraph: { word_count: number } }
 export type LearningEventType = "WordSeen" | "TranslationOpened" | "FavoriteAdded" | "FavoriteRemoved" | "MarkedKnown" | "MarkedUnknown" | "QuestionAnswered" | "ExerciseStarted" | "ExerciseCompleted" | "ExerciseSkipped" | "ChapterOpened" | "ChapterCompleted" | "ParagraphSeen" | "ReadingSessionStarted" | "ReadingSessionFinished"
+export type LocalDictionaryConfig = { enabled: boolean; dictionary_path: string | null }
+export type LogLevel = "Error" | "Warn" | "Info" | "Debug" | "Trace"
+export type OnlineTranslateConfig = { enabled: boolean; timeout_secs: number; batch_size: number; max_retries: number }
 export type ParseBooksResponse = { books: Book[]; errors: string[] }
+export type ReaderConfig = { font_family: string; font_size: number; line_height: number; content_width: number; theme: ReaderTheme; show_word_translation: boolean; show_sentence_translation: boolean; remember_position: boolean; restore_last_book: boolean; show_page_numbers: boolean; show_progress: boolean; show_chapter_progress: boolean; allow_text_selection: boolean; auto_complete_elements: boolean; mark_chapter_completed: boolean; progress_save_interval_secs: number }
+export type ReaderTheme = "Light" | "Dark" | "System"
+export type ReviewConfig = { enabled: boolean; initial_interval_days: number; max_interval_days: number; known_word_threshold: number }
+export type TranslateConfig = { mode: TranslationMode; source_language: string; target_language: string; local_dictionary: LocalDictionaryConfig; online: OnlineTranslateConfig; cache: TranslationCacheConfig }
+export type TranslationCacheConfig = { enabled: boolean; ttl_secs: number; max_entries: number }
+export type TranslationMode = "OnlineFirst" | "OnlineOnly" | "OfflineOnly"
 
 /** tauri-specta globals **/
 

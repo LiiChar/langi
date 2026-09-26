@@ -3,6 +3,8 @@ pub mod error;
 pub mod repositories;
 pub mod word;
 pub mod learning;
+pub mod config;
+pub mod tts;
 
 pub use book::{Book, BookMeta, Chapter};
 pub use repositories::WordRepository;

@@ -46,7 +46,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
             render={
               <SidebarMenuButton
                 size="lg"
-                className="w-full"
+                className="w-full pl-1.5 pr-1"
               />
             }
           >

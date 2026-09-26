@@ -55,9 +55,9 @@ export function BookGridItem({
       )}
 
       {/* File extension */}
-      <div className="absolute top-2 right-2 text-sm glass rounded-md p-1 py-0 z-10 border bg-secondary/60 border-secondary/40">
+      {book.meta.path && <div className="absolute top-2 right-2 text-sm glass rounded-md p-1 py-0 z-10 border bg-secondary/60 border-secondary/40">
         {getFileExtension(book.meta.path)}
-      </div>
+     </div>}
 
       {/* Cover */}
       {

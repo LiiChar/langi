@@ -3,3 +3,4 @@ pub mod parse;
 pub mod translate;
 pub mod vocabulary;
 pub mod learning;
+pub mod config;

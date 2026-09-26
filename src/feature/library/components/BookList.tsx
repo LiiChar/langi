@@ -11,7 +11,7 @@ export const BookList = ({ books, selectedBookId, onClick }: BookListType) => {
   return (
     <div className='flex flex-col gap-2'>
       {books.map(b => (
-        <BookListItem book={ b } selected={selectedBookId === b.id} onHandleClick={onClick} />
+        <BookListItem key={b.id} book={ b } selected={selectedBookId === b.id} onHandleClick={onClick} />
       )) }
     </div>
   )

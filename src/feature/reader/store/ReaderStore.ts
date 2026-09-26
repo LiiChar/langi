@@ -1,30 +1,56 @@
 import { Book } from "@/entities/book/book.type";
-import { create } from "zustand"
-
+import { create } from "zustand";
+import { VisibleElement } from "../hooks/useReader";
 
 interface ReaderStore {
   book: Book | null;
+  elements: VisibleElement[];
   translation: string;
-
-  selectedStart: string | null;
-  selectedEnd: string | null;
+  selectedIds: string[];
 }
 
 interface ReaderActions {
-  setSelectedStart: (selectedStart: string | null) => void;
-  setSelectedEnd: (selectedEnd: string | null) => void;
-  setTranslation: (translation: string) => void;
-  setBook: (book: Book | null) => void;
+  setSelectedIds: (
+    selectedIds: string[],
+  ) => void;
+
+  setTranslation: (
+    translation: string,
+  ) => void;
+
+  setBook: (
+    book: Book | null,
+  ) => void;
+
+  setElements: (
+    elements: VisibleElement[],
+  ) => void;
 }
 
-export const useReaderStore = create<ReaderStore & ReaderActions>((set) => ({
-  book: null,
-  translation: "",
-  selectedStart: null,
-  selectedEnd: null,
+export const useReaderStore =
+  create<
+    ReaderStore & ReaderActions
+  >((set) => ({
+    book: null,
+    elements: [],
+    translation: "",
+    selectedIds: [],
 
-  setSelectedStart: (selectedStart) => set({ selectedStart }),
-  setSelectedEnd: (selectedEnd) => set({ selectedEnd }),
-  setTranslation: (translation) => set({ translation }),
-  setBook: (book) => set({ book }),
-}))
+    setSelectedIds: (
+      selectedIds,
+    ) =>
+      set({ selectedIds }),
+
+    setTranslation: (
+      translation,
+    ) =>
+      set({ translation }),
+
+    setBook: (book) =>
+      set({ book }),
+
+    setElements: (
+      elements,
+    ) =>
+      set({ elements }),
+  }));

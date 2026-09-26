@@ -55,6 +55,8 @@ export const buildDocument = (text: string): Document => {
     });
   }
 
+  
+
   return {
     id: crypto.randomUUID(),
     elements,

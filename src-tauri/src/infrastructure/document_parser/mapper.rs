@@ -2,6 +2,7 @@ use std::path::Path;
 
 use document_parser::{ChapterContent, Document};
 use uuid::Uuid;
+use base64::{engine::general_purpose, Engine as _};
 
 use crate::domain::{Book, BookMeta, Chapter};
 
@@ -36,7 +37,12 @@ impl DocumentMapper {
                 description: document.metadata.description,
                 author: document.metadata.author,
                 language: document.metadata.language,
-                cover_path: None,
+                cover_path: document.metadata.cover.map(|bytes| {
+                    format!(
+                        "data:image/png;base64,{}",
+                        general_purpose::STANDARD.encode(bytes)
+                    )
+                }),
                 path: path.to_string_lossy().into_owned(),
                 size,
                 last_read_at: 0,

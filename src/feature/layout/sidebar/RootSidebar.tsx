@@ -85,15 +85,7 @@ export function RootSidebar(
 
   const { pathname } = useLocation();
 
-  const user: User = {
-    id: "0",
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "https://ui.shadcn.com/avatars/shadcn.jpg",
-  }
-
   let book = useReaderStore((store) => store.book);
-
 
   return (
     <Sidebar
@@ -140,8 +132,6 @@ export function RootSidebar(
 
       <SidebarFooter className=" bg-secondary!">
         {book && <SidebarBook book={book} />}
-
-        <SidebarUser user={user} />
       </SidebarFooter>
 
       <SidebarRail />
@@ -156,19 +146,31 @@ export type SidebarItemType = {
 
 export function SidebarItem({
   item,
-  active
+  active,
 }: SidebarItemType) {
   return (
-    <Link to={item.link} activeProps={{className: "text-red"}}>
-      <SidebarMenuItem className="group-data-[collapsible=icon]:h-[40px]">
-        <SidebarMenuButton tooltip={item.title} className={cn("group-data-[collapsible=icon]:min-w-[40px] group-data-[collapsible=icon]:min-h-[40px]", { "bg-background! hover:bg-secondary/30": active  })}>
-          <div className="group-data-[collapsible=icon]:translate-x-1 group-data-[collapsible=icon]:scale-125">
-
-          {item.icon}
+    <Link to={item.link} className="block min-w-0">
+      <SidebarMenuItem className="min-w-0 group-data-[collapsible=icon]:h-[40px]">
+        <SidebarMenuButton
+          tooltip={item.title}
+          className={cn(
+            "min-w-0",
+            "group-data-[collapsible=icon]:min-w-[40px]",
+            "group-data-[collapsible=icon]:min-h-[40px]",
+            {
+              "bg-background! hover:bg-secondary/30": active,
+            }
+          )}
+        >
+          <div className="shrink-0 group-data-[collapsible=icon]:translate-x-1 group-data-[collapsible=icon]:scale-125">
+            {item.icon}
           </div>
-          <span>{item.title}</span>
+
+          <span className="min-w-0 truncate group-data-[collapsible=icon]:hidden">
+            {item.title}
+          </span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </Link>
-  )
+  );
 }

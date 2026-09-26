@@ -1,0 +1,44 @@
+.reader-word {
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px dashed
+    color-mix(
+      in srgb,
+      currentColor 50%,
+      transparent
+    );
+}
+
+.reader-word:hover {
+  background: color-mix(
+    in srgb,
+    var(--primary) 40%,
+    transparent
+  );
+
+  outline: 1px solid
+    color-mix(
+      in srgb,
+      var(--primary) 40%,
+      transparent
+    );
+
+  border-radius: 0.375rem;
+}
+
+.reader-word[data-selected="true"] {
+  background: color-mix(
+    in srgb,
+    var(--primary) 40%,
+    transparent
+  );
+
+  outline: 1px solid
+    color-mix(
+      in srgb,
+      var(--primary) 40%,
+      transparent
+    );
+
+  border-radius: 0.375rem;
+}
