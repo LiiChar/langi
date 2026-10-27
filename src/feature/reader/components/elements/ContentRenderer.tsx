@@ -1,6 +1,7 @@
 
 import { useReaderSelection } from "../../hooks/useReaderSelection";
-import { ContentElement } from "../../lib/paragraph";
+import type { ReaderElementPosition } from "../../hooks/useReaderSelection";
+import type { ContentElement } from "../../lib/paragraph";
 import { CodeElement } from "./CodeElement";
 import { HeadingElement } from "./HeadingElement";
 import { ParagraphElement } from "./ParagraphElement";
@@ -12,15 +13,13 @@ import { memo } from "react";
 
 export type ContentRendererProps = {
   element: ContentElement;
-  chapterIndex: number;
-  elementIndex: number;
+  position: ReaderElementPosition;
   selection: ReturnType<typeof useReaderSelection>;
 };
 
 export const ContentRenderer = memo(({
   element,
-  chapterIndex,
-  elementIndex,
+  position,
   selection,
 }: ContentRendererProps) => {
   const content = (() => { switch (element.type) {
@@ -29,8 +28,7 @@ export const ContentRenderer = memo(({
         <ParagraphElement
           element={element}
           selection={selection}
-          chapterIndex={chapterIndex}
-          elementIndex={elementIndex}
+          position={position}
         />
       );
 
@@ -56,5 +54,10 @@ export const ContentRenderer = memo(({
       return null;
   }})();
 
-  return <div className="select-text" data-reader-content={`${chapterIndex}-${elementIndex}`}>{content}</div>;
-});
+  return <div className="select-text" data-reader-content={`${position.chapterIndex}-${position.elementIndex}`}>{content}</div>;
+}, (previous, next) =>
+  previous.element === next.element &&
+  previous.selection === next.selection &&
+  previous.position.chapterIndex === next.position.chapterIndex &&
+  previous.position.elementIndex === next.position.elementIndex,
+);

@@ -6,16 +6,17 @@ import {
 import { Popover } from "@base-ui/react";
 import { memo } from "react";
 import { getReaderWordId, useReaderSelection } from "../../hooks/useReaderSelection";
+import type { ReaderElementPosition } from "../../hooks/useReaderSelection";
 import { useReaderTranslation } from "../../hooks/useReaderTranslation";
 import { useReaderStore } from "../../store/ReaderStore";
 import { useReaderDisplayStore } from "../../store/ReaderDisplayStore";
+import { useSettingsStore } from "@/shared/store/SettingsStore";
 import { translationPopover } from "../reader/TranslationPopover";
 
 type ReaderWordProps = {
   word: HtmlReaderWord;
 
-  chapterIndex: number;
-  elementIndex: number;
+  position: ReaderElementPosition;
 
   selection: ReturnType<
     typeof useReaderSelection
@@ -27,18 +28,21 @@ const TRANSLATION_EVENT_COOLDOWN_MS = 30_000;
 
 export const ReaderWord = memo(({
   word,
-  chapterIndex,
-  elementIndex,
+  position,
   selection,
 }: ReaderWordProps) => {
   const { translate } =
     useReaderTranslation();
+
+  const { chapterIndex, elementIndex } = position;
 
 
 
   const bookId = useReaderStore((state) => state.book?.id)
   const chapterId = useReaderStore((state) => state.chapterId )
   const readerMode = useReaderDisplayStore((state) => state.mode);
+  const showWordTranslation = useSettingsStore((state) => state.config?.reader.show_word_translation ?? true);
+  const showSentenceTranslation = useSettingsStore((state) => state.config?.reader.show_sentence_translation ?? true);
 
   const wordId =
     getReaderWordId({
@@ -111,6 +115,8 @@ export const ReaderWord = memo(({
 
 
     if (result.type === "selection") {
+      if (!showSentenceTranslation) return;
+
       void translate({
         type: "selection",
         start: result.start,
@@ -124,6 +130,8 @@ export const ReaderWord = memo(({
 
       return;
     }
+
+    if (!showWordTranslation) return;
 
     const now = Date.now();
     const previousEventAt = lastTranslationEvent.get(wordId) ?? 0;

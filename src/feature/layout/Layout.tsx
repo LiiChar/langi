@@ -5,14 +5,12 @@ import { cn } from "#lib/utils";
 import { Footer } from "./footer/Footer";
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
-  const {
-    header,
-    headerVisible,
-    footer,
-    footerVisible,
-    rightSidebar,
-    rightSidebarVisible,
-  } = useLayoutStore();
+  const header = useLayoutStore((state) => state.header);
+  const headerVisible = useLayoutStore((state) => state.headerVisible);
+  const footer = useLayoutStore((state) => state.footer);
+  const footerVisible = useLayoutStore((state) => state.footerVisible);
+  const rightSidebar = useLayoutStore((state) => state.rightSidebar);
+  const rightSidebarVisible = useLayoutStore((state) => state.rightSidebarVisible);
 
   return (
       <div className="relative flex h-[calc(100vh-48px)] min-h-screen w-full min-w-0 flex-col overflow-hidden bg-sidebar">
@@ -23,7 +21,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <main className={cn("min-h-0 min-w-0 flex-1 bg-background overflow-y-auto border border-transparent rounded-lg")}>
                 {children}
               </main>
-              {rightSidebarVisible ? rightSidebar : <div className="h-full w-0"></div>}
+              {rightSidebarVisible ? rightSidebar : <div className="h-full w-1"></div>}
             </div>
         </RootProviders>
 

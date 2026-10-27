@@ -12,12 +12,20 @@ type FreeReadingNavigation = {
   scrollToPosition: (position: FreeReadingPosition) => void;
 };
 
-type FreeReadingViewProps = {
+type FreeReadingContent = {
   chapters: Chapter[];
   chapterElements: ContentElement[][];
-  scrollElement: HTMLDivElement | null;
   paragraphSpacing: number;
+};
+
+type FreeReadingViewport = {
+  scrollElement: HTMLDivElement | null;
   selection: ReturnType<typeof useReaderSelection>;
+};
+
+type FreeReadingViewProps = {
+  content: FreeReadingContent;
+  viewport: FreeReadingViewport;
   onNavigationReady: (navigation: FreeReadingNavigation | null) => void;
 };
 
@@ -25,7 +33,9 @@ type FreeReadingRow =
   | { type: "chapter"; key: string; chapterIndex: number }
   | { type: "element"; key: string; chapterIndex: number; elementIndex: number; element: ContentElement };
 
-export function FreeReadingView({ chapters, chapterElements, scrollElement, paragraphSpacing, selection, onNavigationReady }: FreeReadingViewProps) {
+export function FreeReadingView({ content, viewport, onNavigationReady }: FreeReadingViewProps) {
+  const { chapters, chapterElements, paragraphSpacing } = content;
+  const { scrollElement, selection } = viewport;
   const { t } = useI18n();
   const { rows, chapterRowIndices, positionRowIndices } = useMemo(() => {
     const rows: FreeReadingRow[] = [];
@@ -113,8 +123,7 @@ export function FreeReadingView({ chapters, chapterElements, scrollElement, para
         </section> : <ContentRenderer
           element={row.element}
           selection={selection}
-          chapterIndex={row.chapterIndex}
-          elementIndex={row.elementIndex}
+          position={row}
         />}
       </div>;
     })}

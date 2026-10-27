@@ -11,6 +11,7 @@ import { convertBook } from "@/shared/commands/import";
 import { useI18n } from "@/shared/i18n";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useReaderDisplayStore } from "@/feature/reader/store/ReaderDisplayStore";
+import { useLayoutStore } from "../store/LayoutStore";
 
 export const HeaderActions = () => {
   const { pathname } = useLocation();
@@ -20,7 +21,8 @@ export const HeaderActions = () => {
   const caseSensitive = useLibraryStore((s) => s.caseSensitive);
   const setCaseSensitive = useLibraryStore((s) => s.setCaseSensitive);
   const setSortMode = useLibraryStore((s) => s.setSortMode);
-  const openReaderSidebar = useReaderDisplayStore((state) => state.openSidebar);
+  const setSidebarSection = useReaderDisplayStore((state) => state.setSidebarSection);
+  const showRightSidebar = useLayoutStore((state) => state.showRightSidebar);
   const { t } = useI18n();
   const navigate = useNavigate();
   const isReaderPage = /^\/book\/[^/]+\/read\/?$/.test(pathname);
@@ -46,9 +48,13 @@ export const HeaderActions = () => {
     if (result.status === "ok") setBooks(result.data.map(convertBook));
     else toast.add({ title: t("common.error"), description: String(result.error) });
   }
+  const openReaderSettings = () => {
+    setSidebarSection("settings");
+    showRightSidebar();
+  };
   if (isReaderPage) return <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
     <Button size="sm" variant="outline" aria-label={t("nav.library")} title={t("nav.library")} onClick={() => void navigate({ to: "/" })}><ArrowLeft />{t("nav.library")}</Button>
-    <Button size="sm" variant="outline" aria-label={t("reader.settings")} title={t("reader.settings")} onClick={() => openReaderSidebar("settings")}><Settings2 /></Button>
+    <Button size="sm" variant="outline" aria-label={t("reader.settings")} title={t("reader.settings")} onClick={openReaderSettings}><Settings2 /></Button>
   </div>;
 
   if (!isLibraryPage) return null;

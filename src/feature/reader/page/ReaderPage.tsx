@@ -8,7 +8,6 @@ import { useReaderSelection } from "../hooks/useReaderSelection";
 import { convertBook } from "@/shared/commands/import";
 import { TranslationPopover } from "../components/reader/TranslationPopover";
 import { useSettingsStore } from "@/shared/store/SettingsStore";
-import { extractWordsFromHtml } from "../hooks/useWordWrappedHtml";
 import { useReaderDisplayStore } from "../store/ReaderDisplayStore";
 import { FreeReadingView, type FreeReadingNavigation } from "../components/reader/FreeReadingView";
 import { restoreCompletedExercises } from "../lib/restoreActivities";
@@ -19,17 +18,10 @@ import { ReaderActions } from "../components/reader/ReaderActions";
 import { useControlsFocus } from "../hooks/useControlFocus";
 import { ReaderIframe } from "../components/reader/ReaderIframe";
 import { useI18n } from "@/shared/i18n";
+import { useReaderLayout } from "../hooks/useReaderLayout";
+import { useReaderNextHandler } from "../hooks/useReaderNextHandler";
+import type { Book } from "@/entities/book/book.type";
 import { useLayoutStore } from "@/feature/layout/store/LayoutStore";
-
-type ReaderLayoutSnapshot = Pick<
-  ReturnType<typeof useLayoutStore.getState>,
-  | "sidebarMode"
-  | "header"
-  | "prevHeader"
-  | "headerVisible"
-  | "rightSidebar"
-  | "rightSidebarVisible"
->;
 
 export const ReaderPage = () => {
   const routeApi = getRouteApi("/book/$bookId/read/");
@@ -40,14 +32,27 @@ export const ReaderPage = () => {
     () => data.status === "ok" ? convertBook(data.data) : null,
     [data],
   );
-  const closeReaderSidebar = useReaderDisplayStore((state) => state.closeSidebar);
+
+  useEffect(() => {
+    if (!book || book.chapters.length === 0) {
+      void navigate({ to: "/" });
+    }
+  }, [book, navigate]);
+
+  if (!book || book.chapters.length === 0) return null;
+
+  return <ReaderSessionPage key={book.id} book={book} />;
+};
+
+function ReaderSessionPage({ book }: { book: Book }) {
+  const hideRightSidebar = useLayoutStore((state) => state.hideRightSidebar);
 
   useLayoutEffect(() => {
-    closeReaderSidebar();
-  }, [book?.id, closeReaderSidebar]);
+    hideRightSidebar();
+  }, [book.id, hideRightSidebar]);
 
   const sessionStartedAt = useRef(Date.now());
-  const previousChapterId = useRef<string | null>(null);
+  const previousChapterKey = useRef<string | null>(null);
   const seenParagraphs = useRef<Set<string>>(new Set());
 
   const setStoreBook = useReaderStore((state) => state.setBook);
@@ -55,20 +60,9 @@ export const ReaderPage = () => {
   const setChapterId = useReaderStore((state) => state.setChapterId);
   const setElementId = useReaderStore((state) => state.setElementId);
   const readerConfig = useSettingsStore((state) => state.config?.reader);
-  const loadSettings = useSettingsStore((state) => state.load);
+  const settingsLoading = useSettingsStore((state) => state.loading);
+  const settingsError = useSettingsStore((state) => state.error);
 
-
-  useEffect(() => { if (!readerConfig) void loadSettings(); }, [readerConfig, loadSettings]);
-
-  if (!book) {
-    navigate({ to: "/" });
-    return null;
-  }
-
-  if (book.chapters == null) {
-    navigate({ to: "/" });
-    return null;
-  }
 
   const {
     currentChapter,
@@ -88,14 +82,21 @@ export const ReaderPage = () => {
     getNewActivityIndex,
   } = useReader(book.chapters);
   const readerMode = useReaderDisplayStore((state) => state.mode);
-  const readerSidebarOpen = useReaderDisplayStore((state) => state.sidebarOpen);
-  const openReaderSidebar = useReaderDisplayStore((state) => state.openSidebar);
+  const readerSidebarOpen = useLayoutStore((state) => state.rightSidebarVisible);
+  const showRightSidebar = useLayoutStore((state) => state.showRightSidebar);
+  const setSidebarSection = useReaderDisplayStore((state) => state.setSidebarSection);
   const textAlign = useReaderDisplayStore((state) => state.textAlign);
   const paragraphSpacing = useReaderDisplayStore((state) => state.paragraphSpacing);
   const saveFreePosition = useReaderDisplayStore((state) => state.saveFreePosition);
+  const openReaderSettings = useCallback(() => {
+    setSidebarSection("settings");
+    showRightSidebar();
+  }, [setSidebarSection, showRightSidebar]);
 
   const [positionReady, setPositionReady] = useState(false);
+  const restoredBookIdRef = useRef<string | null>(null);
   const [freeReadingNavigation, setFreeReadingNavigation] = useState<FreeReadingNavigation | null>(null);
+  const [visibleFreePosition, setVisibleFreePosition] = useState<{ chapterIndex: number; elementIndex: number } | null>(null);
   const registerFreeReadingNavigation = useCallback((navigation: FreeReadingNavigation | null) => {
     setFreeReadingNavigation(navigation);
   }, []);
@@ -103,13 +104,23 @@ export const ReaderPage = () => {
   restorePositionRef.current = restorePosition;
 
   useEffect(() => {
+    // Wait for settings so we don't briefly restore a position that is disabled.
+    if (
+      settingsLoading ||
+      (!readerConfig && !settingsError) ||
+      restoredBookIdRef.current === book.id
+    ) return;
+
     let active = true;
     setPositionReady(false);
     void Promise.all([
-      commands.getBookReadingPosition(book.id).catch(() => null),
+      readerConfig?.remember_position
+        ? commands.getBookReadingPosition(book.id).catch(() => null)
+        : Promise.resolve(null),
       commands.getBookExerciseEvents(book.id).catch(() => null),
     ]).then(([positionResult, eventResult]) => {
       if (!active) return;
+      restoredBookIdRef.current = book.id;
       if (eventResult?.status === "ok") {
         restoreActivities(restoreCompletedExercises(book.chapters, eventResult.data));
       }
@@ -126,7 +137,7 @@ export const ReaderPage = () => {
       setPositionReady(true);
     });
     return () => { active = false; };
-  }, [book.id, book.chapters, restoreActivities]);
+  }, [book.id, book.chapters, readerConfig, restoreActivities, settingsError, settingsLoading]);
 
   useEffect(() => {
     const hasCyrillic = book.chapters.some((chapter) => /[а-яё]/i.test(chapter.html));
@@ -181,21 +192,39 @@ export const ReaderPage = () => {
     };
   }, []);
 
+  const syncVisibleFreePosition = useCallback(() => {
+    const position = getVisibleFreePosition();
+    if (!position) return;
+
+    setVisibleFreePosition((current) =>
+      current?.chapterIndex === position.chapterIndex && current.elementIndex === position.elementIndex
+        ? current
+        : { chapterIndex: position.chapterIndex, elementIndex: position.elementIndex },
+    );
+  }, [getVisibleFreePosition]);
+
   const saveCurrentFreePosition = useCallback(() => {
-    if (readerMode !== "free") return;
+    if (readerMode !== "free" || !readerConfig?.remember_position) return;
     const position = getVisibleFreePosition();
     if (position) saveFreePosition(book.id, position);
-  }, [book.id, getVisibleFreePosition, readerMode, saveFreePosition]);
+  }, [book.id, getVisibleFreePosition, readerConfig?.remember_position, readerMode, saveFreePosition]);
 
   const freePositionSaveTimer = useRef<number | null>(null);
+  const freePositionFrame = useRef<number | null>(null);
   const scheduleFreePositionSave = useCallback(() => {
     if (readerMode !== "free") return;
+    if (freePositionFrame.current === null) {
+      freePositionFrame.current = window.requestAnimationFrame(() => {
+        freePositionFrame.current = null;
+        syncVisibleFreePosition();
+      });
+    }
     if (freePositionSaveTimer.current !== null) window.clearTimeout(freePositionSaveTimer.current);
     freePositionSaveTimer.current = window.setTimeout(() => {
       freePositionSaveTimer.current = null;
       saveCurrentFreePosition();
     }, 120);
-  }, [readerMode, saveCurrentFreePosition]);
+  }, [readerMode, saveCurrentFreePosition, syncVisibleFreePosition]);
 
   useEffect(() => {
     if (readerMode !== "free") return;
@@ -204,19 +233,31 @@ export const ReaderPage = () => {
         window.clearTimeout(freePositionSaveTimer.current);
         freePositionSaveTimer.current = null;
       }
+      if (freePositionFrame.current !== null) {
+        window.cancelAnimationFrame(freePositionFrame.current);
+        freePositionFrame.current = null;
+      }
       saveCurrentFreePosition();
     };
   }, [readerMode, saveCurrentFreePosition]);
 
   useEffect(() => {
     if (readerMode !== "free" || !positionReady || !readerBoundary || !freeReadingNavigation) return;
-    const position = useReaderDisplayStore.getState().freePositions[book.id];
+    const position = readerConfig?.remember_position
+      ? useReaderDisplayStore.getState().freePositions[book.id]
+      : null;
     if (!position) {
       readerBoundary.scrollTop = 0;
       return;
     }
     freeReadingNavigation.scrollToPosition(position);
-  }, [book.id, freeReadingNavigation, positionReady, readerBoundary, readerMode]);
+  }, [book.id, freeReadingNavigation, positionReady, readerBoundary, readerConfig?.remember_position, readerMode]);
+
+  useEffect(() => {
+    if (readerMode !== "free" || !positionReady || !readerBoundary || !freeReadingNavigation) return;
+    const frame = window.requestAnimationFrame(syncVisibleFreePosition);
+    return () => window.cancelAnimationFrame(frame);
+  }, [freeReadingNavigation, positionReady, readerBoundary, readerMode, syncVisibleFreePosition]);
 
   useEffect(() => {
     if (readerMode !== "learning" || !positionReady || !readerBoundary) return;
@@ -231,11 +272,21 @@ export const ReaderPage = () => {
     return () => window.cancelAnimationFrame(frame);
   }, [currentChapterIndex, currentElementIndex, positionReady, readerBoundary, readerMode]);
 
-  const emitLearningEvent = (
+  const eventContextRef = useRef({
+    chapterId: currentChapter.id,
+    elementIndex: currentElementIndex,
+  });
+  eventContextRef.current = {
+    chapterId: currentChapter.id,
+    elementIndex: currentElementIndex,
+  };
+
+  const emitLearningEvent = useCallback((
     eventType: LearningEventType,
     payload: LearningEventData,
   ) => {
     if (readerMode !== "learning") return;
+    const eventContext = eventContextRef.current;
 
     events.learningEvent.emit({
       id: crypto.randomUUID(),
@@ -244,8 +295,8 @@ export const ReaderPage = () => {
       timestamp: Date.now(),
       context: {
         book_id: book.id,
-        chapter_id: currentChapter.id,
-        element_id: currentChapter.id + "-" + currentElementIndex,
+        chapter_id: eventContext.chapterId,
+        element_id: eventContext.chapterId + "-" + eventContext.elementIndex,
         exercise_id: null,
         question_id: null,
         skill_id: null,
@@ -253,15 +304,14 @@ export const ReaderPage = () => {
       },
       data: payload,
     });
-
-  };
+  }, [book.id, readerMode]);
 
   useEffect(() => {
     setStoreBook(book);
   }, [book, setStoreBook]);
 
   useEffect(() => {
-    if (readerMode !== "learning") return;
+    if (readerMode !== "learning" || !positionReady) return;
     sessionStartedAt.current = Date.now();
     seenParagraphs.current = new Set();
 
@@ -278,7 +328,7 @@ export const ReaderPage = () => {
         paragraphs_seen: seenParagraphs.current.size,
       });
     };
-  }, [book.id, readerMode]);
+  }, [book.id, emitLearningEvent, positionReady, readerMode]);
 
   useEffect(() => {
     setElements(completedElements);
@@ -291,23 +341,26 @@ export const ReaderPage = () => {
       return;
     }
 
-    if (previousChapterId.current === currentChapter.id) {
+    const chapterKey = `${book.id}:${currentChapter.id}`;
+    if (previousChapterKey.current === chapterKey) {
       return;
     }
 
-    previousChapterId.current = currentChapter.id;
+    previousChapterKey.current = chapterKey;
 
 
     setElementId(`${currentChapter.id}-${currentElementIndex}`);
     emitLearningEvent("ChapterOpened", { type: "Empty" });
     setChapterId(currentChapter.id);
-  }, [currentChapter, currentChapterIndex, currentElementIndex, positionReady, readerMode]);
+  }, [currentChapter, currentChapterIndex, currentElementIndex, emitLearningEvent, positionReady, readerMode]);
 
   useEffect(() => {
     if (readerMode !== "learning" || !positionReady || !currentChapter) return;
     setElementId(`${currentChapter.id}-${currentElementIndex}`);
-    void commands.saveBookReadingPosition(book.id, currentChapter.id, `${currentChapter.id}-${currentElementIndex}`);
-  }, [book.id, currentChapter, currentElementIndex, positionReady, readerMode, setElementId]);
+    if (readerConfig?.remember_position) {
+      void commands.saveBookReadingPosition(book.id, currentChapter.id, `${currentChapter.id}-${currentElementIndex}`);
+    }
+  }, [book.id, currentChapter, currentElementIndex, positionReady, readerConfig?.remember_position, readerMode, setElementId]);
 
   /**
    * Paragraph seen.
@@ -340,204 +393,70 @@ export const ReaderPage = () => {
     currentElement,
     currentChapter.id,
     currentElementIndex,
+    emitLearningEvent,
     readerMode,
   ]);
 
-  const advancingRef = useRef(false);
-  const [isAdvancing, setIsAdvancing] = useState(false);
-  const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const { onNextHandler, isAdvancing, advanceError } = useReaderNextHandler({
+    currentChapter,
+    readerMode,
+    currentElement,
+    elements,
+    next,
+    advance,
+    addActivity,
+    getBaseElementIndex,
+    getNewActivityIndex,
+    emitLearningEvent,
+  });
 
-  const onNextHandler = useCallback(async () => {
-    if (advancingRef.current) return;
-    advancingRef.current = true;
-    setIsAdvancing(true);
-    setAdvanceError(null);
-    let navigationResult: ReturnType<typeof next> | null = null;
-    try {
-    const result = next();
-    navigationResult = result;
-
-    switch (result.type) {
-      case "element": {
-        const isLearningExercise = currentElement?.type === "review-word" || currentElement?.type === "review-words";
-        const nextVisibleElement = elements[result.elementIndex];
-        const nextIsLearningExercise = nextVisibleElement?.type === "review-word" || nextVisibleElement?.type === "review-words";
-        if (isLearningExercise || nextIsLearningExercise) return;
-
-        const nextActivity = await commands.getNextActivity();
-
-        if (nextActivity.status === "error") {
-          return;
-        }
-
-        const data = nextActivity.data;
-
-        if ("WordReview" in data) {
-          const review = data.WordReview;
-
-          if (review.word_ids.length > 0) {
-            const words = review.word_ids;
-            const translated = await Promise.all(words.map(async (word) => {
-              const result = await commands.translate("", "", word);
-              return result.status === "ok" ? result.data : null;
-            }));
-            if (translated.some((translation) => !translation)) return;
-            if (words.length === 1) {
-              const distractorWords = [...new Set(extractWordsFromHtml(currentChapter.html))]
-                .filter((candidate) => candidate.toLocaleLowerCase() !== words[0].toLocaleLowerCase())
-                .slice(0, 3);
-              const distractors = await Promise.all(distractorWords.map((candidate) => commands.translate("", "", candidate)));
-              const choices = [...new Set([translated[0]!, ...distractors.flatMap((result) => result.status === "ok" ? [result.data] : [])])].slice(0, 4);
-              const anchorIndex = getBaseElementIndex(result.chapterIndex, result.elementIndex);
-              if (anchorIndex !== null) {
-                addActivity({ type: "review-word", word: words[0], answer: translated[0]!, translations: choices }, anchorIndex, result.chapterIndex);
-                navigationResult = { ...result, elementIndex: getNewActivityIndex(result.chapterIndex, anchorIndex) };
-              }
-              return;
-            }
-            const pairs = Object.fromEntries(words.map((word, index) => [word, translated[index]!]));
-
-            const anchorIndex = getBaseElementIndex(result.chapterIndex, result.elementIndex);
-            if (anchorIndex === null) return;
-            addActivity(
-              {
-                type: "review-words",
-                words,
-                translations: translated as string[],
-                pairs,
-              },
-              anchorIndex,
-              result.chapterIndex,
-            );
-            navigationResult = { ...result, elementIndex: getNewActivityIndex(result.chapterIndex, anchorIndex) };
-          }
-
-          return;
-        }
-
-        if ("SkillExercise" in data) {
-          // Создание упражнения на основе SkillExercise.
-          return;
-        }
-
-        if ("Translation" in data) {
-          const word = data.Translation.word_id;
-          const answerResult = await commands.translate("", "", word);
-          if (answerResult.status === "error") return;
-
-          const distractorWords = [...new Set(
-            extractWordsFromHtml(currentChapter.html)
-              .filter((candidate) => candidate.toLocaleLowerCase() !== word.toLocaleLowerCase()),
-          )].slice(0, 3);
-          const distractorResults = await Promise.all(
-            distractorWords.map((candidate) => commands.translate("", "", candidate)),
-          );
-          const translations = [...new Set([
-            answerResult.data,
-            ...distractorResults.flatMap((result) => result.status === "ok" ? [result.data] : []),
-          ])].slice(0, 4);
-          const anchorIndex = getBaseElementIndex(result.chapterIndex, result.elementIndex);
-          if (anchorIndex === null) return;
-          addActivity({
-            type: "review-word",
-            word,
-            answer: answerResult.data,
-            translations,
-          }, anchorIndex, result.chapterIndex);
-          navigationResult = { ...result, elementIndex: getNewActivityIndex(result.chapterIndex, anchorIndex) };
-          return;
-        }
-
-        if ("ComprehensionExercise" in data) {
-          // Создание упражнения на основе ComprehensionExercise.
-          return;
-        }
-
-        return;
-      }
-
-      case "chapter_completed": {
-        emitLearningEvent("ChapterCompleted", {
-          type: "Empty",
-        });
-
-        return;
-      }
-
-      case "book_completed": {
-        // Завершение книги.
-        return;
-      }
-    }
-    } catch (error) {
-      setAdvanceError(error instanceof Error ? error.message : "Не удалось загрузить следующее задание");
-    } finally {
-      if (navigationResult) advance(navigationResult);
-      advancingRef.current = false;
-      setIsAdvancing(false);
-    }
-  }, [next, advance, addActivity, emitLearningEvent, currentElement, elements, getBaseElementIndex, getNewActivityIndex]);
+  const speechPosition = readerMode === "free"
+    ? visibleFreePosition
+    : { chapterIndex: currentChapterIndex, elementIndex: currentElementIndex };
+  const speechElement = readerMode === "free"
+    ? speechPosition
+      ? allChapterElements[speechPosition.chapterIndex]?.[speechPosition.elementIndex] ?? null
+      : null
+    : currentElement ?? null;
 
   const { controlRef, visible} = useControlsFocus(".reader")
   const { t } = useI18n();
 
-  const setSidebarMode = useLayoutStore((state) => state.setSidebarMode);
-  const setHeaderVisible = useLayoutStore((state) => state.setHeaderVisible);
-  const setRightSidebar = useLayoutStore((state) => state.setRightSidebar);
-  const setHeader = useLayoutStore((state) => state.setHeader);
-  const layoutSnapshotRef = useRef<ReaderLayoutSnapshot | null>(null);
-
-  useLayoutEffect(() => {
-    const {
-      sidebarMode,
-      header,
-      prevHeader,
-      headerVisible,
-      rightSidebar,
-      rightSidebarVisible,
-    } = useLayoutStore.getState();
-    layoutSnapshotRef.current = {
-      sidebarMode,
-      header,
-      prevHeader,
-      headerVisible,
-      rightSidebar,
-      rightSidebarVisible,
-    };
-
-    setSidebarMode('hide');
-    setHeaderVisible(true);
-
-    return () => {
-      const snapshot = layoutSnapshotRef.current;
-      if (snapshot) useLayoutStore.setState(snapshot);
-      layoutSnapshotRef.current = null;
-    };
-  }, [setHeaderVisible, setSidebarMode]);
-
-  useLayoutEffect(() => {
-    setHeader(
+  const readerHeader = useMemo(
+    () => (
       <div className="h-1 w-full">
         <ReaderFocusControls
           visible={visible}
           ref={controlRef}
         />
       </div>
-    );
-  }, [controlRef, setHeader, visible]);
+    ),
+    [controlRef, visible],
+  );
 
-  useLayoutEffect(() => {
-    setRightSidebar(
+  const navigateToChapter = useCallback((chapterIndex: number) => {
+    if (readerMode === "free") {
+      freeReadingNavigation?.scrollToChapter(chapterIndex);
+    } else {
+      document.getElementById(`reader-chapter-${chapterIndex}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }, [freeReadingNavigation, readerMode]);
+
+  const readerSidebar = useMemo(
+    () => (
       <ReaderSidebar
-      chapters={book.chapters}
-      mode={readerMode}
-      activeChapterIndex={currentChapterIndex}
-      onNavigateToChapter={(chapterIndex) => {
-        if (readerMode === "free") freeReadingNavigation?.scrollToChapter(chapterIndex);
-        else document.getElementById(`reader-chapter-${chapterIndex}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }}
-    />);
-  }, [book.chapters, currentChapterIndex, freeReadingNavigation, readerMode, setRightSidebar]);
+        chapters={book.chapters}
+        activeChapterIndex={currentChapterIndex}
+        onNavigateToChapter={navigateToChapter}
+      />
+    ),
+    [book.chapters, currentChapterIndex, navigateToChapter],
+  );
+
+  useReaderLayout({ header: readerHeader, rightSidebar: readerSidebar });
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -566,8 +485,7 @@ export const ReaderPage = () => {
                           element={element.element}
                           key={getElementKey(element.chapterIndex, element.elementIndex)}
                           selection={selection}
-                          chapterIndex={element.chapterIndex}
-                          elementIndex={element.elementIndex}
+                          position={element}
                         />
                       ))}
                     </section>)
@@ -575,18 +493,35 @@ export const ReaderPage = () => {
                 </>
               :
               <FreeReadingView
-                chapters={book.chapters}
-                chapterElements={allChapterElements}
-                scrollElement={readerBoundary}
-                paragraphSpacing={paragraphSpacing}
-                selection={selection}
+                content={{
+                  chapters: book.chapters,
+                  chapterElements: allChapterElements,
+                  paragraphSpacing,
+                }}
+                viewport={{
+                  scrollElement: readerBoundary,
+                  selection,
+                }}
                 onNavigationReady={registerFreeReadingNavigation}
               />
             }
           </div>
           <TranslationPopover collisionBoundary={readerBoundary} />
           </div>
-          <ReaderActions element={currentElement} isAdvancing={isAdvancing} onNext={onNextHandler} progress={(currentElementIndex / elements.length) * 100} />
+          <ReaderActions
+            current={{
+              bookId: book.id,
+              element: speechElement,
+              chapterIndex: speechPosition?.chapterIndex ?? currentChapterIndex,
+              elementIndex: speechPosition?.elementIndex ?? currentElementIndex,
+            }}
+            onNext={onNextHandler}
+            navigation={{
+              isAdvancing,
+              progress: elements.length > 0 ? (currentElementIndex / elements.length) * 100 : 0,
+              canAdvance: readerMode === "learning",
+            }}
+          />
         </div>
 
 
@@ -598,7 +533,7 @@ export const ReaderPage = () => {
           aria-label={t("reader.settings")}
           title={t("reader.settings")}
           data-reader-sidebar-trigger="true"
-          onClick={() => openReaderSidebar("settings")}
+          onClick={openReaderSettings}
           className="absolute inset-y-0 right-0 z-20 w-[3px] cursor-pointer border-0 bg-transparent p-0 outline-none focus-visible:bg-primary/30"
         />
       )}
@@ -612,4 +547,4 @@ export const ReaderPage = () => {
 
     </div>
   );
-};
+}

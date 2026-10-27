@@ -31,6 +31,8 @@ export type CompletedElement = {
   elementIndex: number;
 };
 
+export type ReaderElementPosition = Pick<CompletedElement, "chapterIndex" | "elementIndex">;
+
 const isParagraphElement = (
   element: ContentElement,
 ): element is ParagraphElementType => {

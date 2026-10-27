@@ -4,9 +4,10 @@ import {
   useRef,
   useState,
 } from "react";
+import type { RefCallback } from "react";
 
 type ControlsFocusRet = {
-  controlRef: React.RefObject<HTMLDivElement | null>;
+  controlRef: RefCallback<HTMLDivElement>;
   visible: boolean;
 };
 
@@ -19,8 +20,10 @@ export const useControlsFocus = (
   scrollSelector: string,
 ): ControlsFocusRet => {
   const [visible, setVisible] = useState(false);
-
-  const controlRef = useRef<HTMLDivElement>(null);
+  const [controlsElement, setControlsElement] = useState<HTMLDivElement | null>(null);
+  const controlRef = useCallback<RefCallback<HTMLDivElement>>((element) => {
+    setControlsElement(element);
+  }, []);
   const visibleRef = useRef(visible);
 
   const setControlsVisible = useCallback(
@@ -127,10 +130,8 @@ export const useControlsFocus = (
       }
     };
 
-    const controls = controlRef.current;
-
-    controls?.addEventListener("mouseenter", onMouseEnterControls);
-    controls?.addEventListener("mouseleave", onMouseLeaveControls);
+    controlsElement?.addEventListener("mouseenter", onMouseEnterControls);
+    controlsElement?.addEventListener("mouseleave", onMouseLeaveControls);
 
     scrollElement.addEventListener("scroll", onScroll, {
       passive: true,
@@ -140,11 +141,11 @@ export const useControlsFocus = (
     document.addEventListener("click", onClick);
 
     return () => {
-      controls?.removeEventListener(
+      controlsElement?.removeEventListener(
         "mouseenter",
         onMouseEnterControls,
       );
-      controls?.removeEventListener(
+      controlsElement?.removeEventListener(
         "mouseleave",
         onMouseLeaveControls,
       );
@@ -155,7 +156,7 @@ export const useControlsFocus = (
 
       clearHideTimer();
     };
-  }, [scrollSelector, setControlsVisible]);
+  }, [controlsElement, scrollSelector, setControlsVisible]);
 
   return {
     controlRef,

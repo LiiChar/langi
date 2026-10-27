@@ -16,14 +16,11 @@ interface ReaderDisplayState {
   textAlign: ReaderTextAlign;
   paragraphSpacing: number;
   freePositions: Record<string, FreeReadingPosition>;
-  sidebarOpen: boolean;
   sidebarSection: ReaderSidebarSection;
   setMode: (mode: ReaderMode) => void;
   setTextAlign: (textAlign: ReaderTextAlign) => void;
   setParagraphSpacing: (paragraphSpacing: number) => void;
   saveFreePosition: (bookId: string, position: FreeReadingPosition) => void;
-  openSidebar: (section?: ReaderSidebarSection) => void;
-  closeSidebar: () => void;
   setSidebarSection: (section: ReaderSidebarSection) => void;
 }
 
@@ -32,15 +29,12 @@ export const useReaderDisplayStore = create<ReaderDisplayState>()(persist((set) 
   textAlign: "left",
   paragraphSpacing: 0.25,
   freePositions: {},
-  sidebarOpen: false,
   sidebarSection: "settings",
   setMode: (mode) => set({ mode }),
   setTextAlign: (textAlign) => set({ textAlign }),
   setParagraphSpacing: (paragraphSpacing) => set({ paragraphSpacing }),
   saveFreePosition: (bookId, position) => set((state) => ({ freePositions: { ...state.freePositions, [bookId]: position } })),
-  openSidebar: (section = "settings") => set({ sidebarOpen: true, sidebarSection: section }),
-  closeSidebar: () => set({ sidebarOpen: false }),
-  setSidebarSection: (sidebarSection) => set({ sidebarSection, sidebarOpen: true }),
+  setSidebarSection: (sidebarSection) => set({ sidebarSection }),
 }), { name: "langi.reader.display", partialize: (state) => ({
   mode: state.mode,
   textAlign: state.textAlign,

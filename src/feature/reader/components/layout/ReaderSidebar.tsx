@@ -5,21 +5,22 @@ import { useI18n } from "@/shared/i18n";
 import { useSettingsStore } from "@/shared/store/SettingsStore";
 import { type Config } from "@/shared/commands/bindings";
 import { updateConfigSection } from "@/shared/lib/updateConfigSection";
-import { ReaderMode, ReaderSidebarSection, ReaderTextAlign, useReaderDisplayStore } from "../../store/ReaderDisplayStore";
+import { ReaderSidebarSection, ReaderTextAlign, useReaderDisplayStore } from "../../store/ReaderDisplayStore";
+import { useLayoutStore } from "@/feature/layout/store/LayoutStore";
 
 type ReaderSidebarProps = {
   chapters: Array<{ id: string; title: string | null }>;
-  mode: ReaderMode;
   activeChapterIndex: number;
   onNavigateToChapter: (chapterIndex: number) => void;
 };
 
-export function ReaderSidebar({ chapters, mode, activeChapterIndex, onNavigateToChapter }: ReaderSidebarProps) {
+export function ReaderSidebar({ chapters, activeChapterIndex, onNavigateToChapter }: ReaderSidebarProps) {
   const { t } = useI18n();
-  const open = useReaderDisplayStore((state) => state.sidebarOpen);
+  const open = useLayoutStore((state) => state.rightSidebarVisible);
+  const hideRightSidebar = useLayoutStore((state) => state.hideRightSidebar);
   const section = useReaderDisplayStore((state) => state.sidebarSection);
   const setSection = useReaderDisplayStore((state) => state.setSidebarSection);
-  const close = useReaderDisplayStore((state) => state.closeSidebar);
+  const mode = useReaderDisplayStore((state) => state.mode);
   const setMode = useReaderDisplayStore((state) => state.setMode);
   const textAlign = useReaderDisplayStore((state) => state.textAlign);
   const setTextAlign = useReaderDisplayStore((state) => state.setTextAlign);
@@ -42,7 +43,7 @@ export function ReaderSidebar({ chapters, mode, activeChapterIndex, onNavigateTo
   if (!open) return null;
 
   return <>
-    <button className="absolute inset-0 z-30 cursor-default lg:hidden" aria-label={t("reader.closeSidebar")} onClick={close} />
+    <button className="absolute inset-0 z-30 cursor-default lg:hidden" aria-label={t("reader.closeSidebar")} onClick={hideRightSidebar} />
     <div className="w-1 lg:w-0 h-full"></div>
     <aside className="absolute inset-y-0 right-1 z-40 flex flex-col overflow-hidden rounded-lg border-l bg-background/90 backdrop-blur-lg lg:bg-background lg:static lg:mx-1 lg:z-auto lg:h-full lg:w-[min(30rem,38%)] lg:shrink-0 lg:rounded-xl lg:border lg:shadow-none">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -51,7 +52,7 @@ export function ReaderSidebar({ chapters, mode, activeChapterIndex, onNavigateTo
             {navItem("settings", "", t("settings.reader"))}
             {navItem("chapters", "", t("reader.chapters"))}
           </nav>
-          <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label={t("reader.closeSidebar")} onClick={close}><X /></Button>
+          <Button size="icon" variant="ghost" className="size-8 shrink-0" aria-label={t("reader.closeSidebar")} onClick={hideRightSidebar}><X /></Button>
         </header>
         {section === "settings"
           ?
@@ -91,7 +92,7 @@ export function ReaderSidebar({ chapters, mode, activeChapterIndex, onNavigateTo
                 <button key={chapter.id}
                   disabled={mode === "learning" && chapterIndex > activeChapterIndex}
                   className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
-                  onClick={() => { onNavigateToChapter(chapterIndex); close(); }}
+                  onClick={() => { onNavigateToChapter(chapterIndex); hideRightSidebar(); }}
                 >
                   <span className="mr-2 text-muted-foreground tabular-nums">
                     {chapterIndex + 1}
