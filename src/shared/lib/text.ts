@@ -1,5 +1,3 @@
-import { getFileExtension } from "./file";
-
 export const timeRead = (text: string | number): number =>
 	Math.ceil((typeof text === 'string' ? text.split(' ').length : text) / 200);
 

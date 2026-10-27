@@ -33,8 +33,9 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // Ignore native runtime state as well as Rust sources. SQLite and config.toml
+      // are updated while the app is running and should never trigger a page reload.
+      ignored: ["**/src-tauri/**", "db.sqlite*", "**/db.sqlite*", "config.toml", "**/config.toml", "**/*.sqlite*", "**/*.db"],
     },
   },
 }));

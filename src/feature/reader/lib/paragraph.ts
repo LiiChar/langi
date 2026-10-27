@@ -1,15 +1,35 @@
 export type ParagraphType = "paragraph" | "heading" | "question" | "code";
-
 export type ParagraphQuestion = {
   question: string;
   answer: string;
-}
+};
+
+export type ReviewWordQuestion = {
+  word: string;
+  translations: string[];
+  answer: string;
+};
+
+export type ReviewWordsQuestion = {
+  words: string[];
+  translations: string[];
+  pairs: Record<string, string>;
+};
+
+export type SentenceQuestion = {
+  sentence: string;
+  choices: string[];
+  answer: string;
+};
 
 export type ContentElement =
   | ParagraphElementType
   | HeadingElementType
   | QuestionElementType
-  | CodeElementType;
+  | CodeElementType
+  | ReviewWordElementType
+  | ReviewWordsElementType
+  | SentenceElementType;
 
 export type ParagraphElementType = {
   type: "paragraph";
@@ -29,6 +49,29 @@ export type QuestionElementType = {
   right: number;
   label: string;
   description: string;
+};
+
+export type ReviewWordElementType = {
+  type: "review-word";
+  word: string;
+  translations: string[];
+  answer: string;
+  selectedAnswer?: string;
+};
+
+export type ReviewWordsElementType = {
+  type: "review-words";
+  words: string[];
+  translations: string[];
+  pairs: Record<string, string>;
+  initialMatched?: Record<string, string>;
+};
+
+export type SentenceElementType = {
+  type: "sentence";
+  sentence: string;
+  choices: string[];
+  answer: string;
 };
 
 export type CodeElementType = {
@@ -63,7 +106,10 @@ export const buildDocument = (text: string): Document => {
   };
 };
 
-const MAX_PARAGRAPH_LENGTH = 100;
+// Размер шага чтения: предложения по возможности остаются целыми,
+// а длинные фразы делятся по естественным паузам.
+const TARGET_CHUNK_LENGTH = 220;
+const MAX_CHUNK_LENGTH = 320;
 
 const BLOCK_TAGS = [
   "p",
@@ -392,32 +438,90 @@ const normalizeText = (text: string): string => {
 const extractBlocks = (html: string): string[] => {
   const doc = new DOMParser().parseFromString(html, "text/html");
 
-  const elements = Array.from(doc.querySelectorAll(BLOCK_TAGS.join(",")));
+  const selector = BLOCK_TAGS.join(",");
+  const elements = Array.from(doc.querySelectorAll(selector))
+    // Не обрабатываем контейнер вместе с его вложенными блочными элементами.
+    .filter((element) => !element.querySelector(selector));
 
   // Если HTML вообще не содержит блочных элементов,
-  // считаем весь документ одним блоком.
+  // используем содержимое body целиком.
   if (elements.length === 0) {
-    const text = normalizeText(doc.body.outerHTML ?? "");
-
-    return text ? [text] : [];
+    return doc.body.innerHTML.trim() ? [doc.body.innerHTML] : [];
   }
 
   return elements
-    .map((element) => normalizeText(element.outerHTML ?? ""))
+    .map((element) => element.outerHTML)
     .filter(Boolean);
 };
 
-/**
- * Разбивает длинный блок на предложения.
- *
- * Короткие блоки остаются как есть.
- */
-const splitLongBlock = (text: string): string[] => {
-  if (text.length <= MAX_PARAGRAPH_LENGTH) {
-    return [text];
-  }
+const getVisibleText = (html: string): string => {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  // Изображения (включая data:image/...;base64) не входят в длину текста.
+  doc.querySelectorAll("img, script, style, noscript").forEach((element) => element.remove());
+  return normalizeText(doc.body.textContent ?? "");
+};
 
-  return splitIntoSentences(text);
+const getImages = (html: string): string[] => {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return Array.from(doc.querySelectorAll("img"), (image) => image.outerHTML);
+};
+
+const splitAtNaturalPauses = (sentence: string): string[] => {
+  const parts = sentence.split(/(?<=[,;:—–])\s+/).filter(Boolean);
+  if (parts.length < 2) return [sentence];
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const part of parts) {
+    if (current && current.length + part.length + 1 > TARGET_CHUNK_LENGTH) {
+      chunks.push(current);
+      current = part;
+    } else {
+      current = current ? `${current} ${part}` : part;
+    }
+  }
+  if (current) chunks.push(current);
+
+  // Если естественные паузы не помогли, режем по словам, не оставляя
+  // крошечные хвосты и не разрывая слова.
+  return chunks.flatMap((chunk) => {
+    if (chunk.length <= MAX_CHUNK_LENGTH) return [chunk];
+    const words = chunk.split(/\s+/);
+    const result: string[] = [];
+    let part = "";
+    for (const word of words) {
+      if (part && part.length + word.length + 1 > TARGET_CHUNK_LENGTH) {
+        result.push(part);
+        part = word;
+      } else {
+        part = part ? `${part} ${word}` : word;
+      }
+    }
+    if (part) result.push(part);
+    return result;
+  });
+};
+
+const splitLongBlock = (text: string): string[] => {
+  const sentences = splitIntoSentences(text);
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const sentence of sentences) {
+    const sentenceParts = sentence.length > MAX_CHUNK_LENGTH
+      ? splitAtNaturalPauses(sentence)
+      : [sentence];
+    for (const part of sentenceParts) {
+      if (current && current.length + part.length + 1 > TARGET_CHUNK_LENGTH) {
+        chunks.push(current);
+        current = part;
+      } else {
+        current = current ? `${current} ${part}` : part;
+      }
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
 };
 
 /**
@@ -430,5 +534,18 @@ export const splitIntoParagraphs = (text: string): string[] => {
 
   const blocks = extractBlocks(text);
 
-  return blocks.flatMap(splitLongBlock);
+  return blocks.flatMap((html) => {
+    const visibleText = getVisibleText(html);
+    const images = getImages(html);
+
+    // Сохраняем исходную HTML-разметку, если блок помещается в один шаг.
+    if (!visibleText || visibleText.length <= TARGET_CHUNK_LENGTH) {
+      return [html];
+    }
+
+    const chunks = splitLongBlock(visibleText);
+    // Если блок пришлось делить, изображения выводим отдельными элементами:
+    // они не влияют на границы текста и не теряются при сегментации.
+    return [...chunks, ...images];
+  });
 };

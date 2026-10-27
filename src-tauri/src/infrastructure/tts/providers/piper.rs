@@ -1,16 +1,16 @@
 use std::{
     collections::HashMap,
+    num::{NonZeroU16, NonZeroU32},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use async_trait::async_trait;
 use piper_rs::Piper;
 use rodio::{
     buffer::SamplesBuffer,
-    OutputStream,
-    OutputStreamBuilder,
-    Sink,
+    DeviceSinkBuilder,
+    Player,
 };
 use walkdir::WalkDir;
 
@@ -23,20 +23,15 @@ use crate::{
     },
 };
 
-struct PlaybackState {
-    sink: Option<Sink>,
-}
-
 pub struct PiperProvider {
     models_path: PathBuf,
 
     /// Audio output.
     ///
     /// OutputStream должен жить всё время жизни provider.
-    output_stream: OutputStream,
-
-    /// Текущий playback.
-    playback: Arc<Mutex<PlaybackState>>,
+    _output_stream: Arc<rodio::MixerDeviceSink>,
+    player: Player,
+    models: Mutex<HashMap<String, Arc<OnceLock<Result<Mutex<Piper>, String>>>>>,
 
     /// Доступные Piper voices.
     voices: HashMap<String, TTSVoice>,
@@ -66,31 +61,80 @@ impl PiperProvider {
         }
 
         let output_stream =
-            OutputStreamBuilder::open_default_stream()
+            DeviceSinkBuilder::open_default_sink()
                 .map_err(|error| {
                     TTSError::Audio(error.to_string())
                 })?;
+        let player = Player::connect_new(output_stream.mixer());
+        let initial_voice = config.voice.clone().unwrap_or_else(|| "ru_RU-denis-medium".into());
+        let initial_slot = Arc::new(OnceLock::new());
+        let mut models = HashMap::new();
+        models.insert(initial_voice.clone(), Arc::clone(&initial_slot));
+        Self::start_model_preload(&models_path, &initial_voice, initial_slot);
 
         Ok(Self {
             models_path,
-            output_stream,
-            playback: Arc::new(Mutex::new(
-                PlaybackState {
-                    sink: None,
-                },
-            )),
+            _output_stream: Arc::new(output_stream),
+            player,
+            models: Mutex::new(models),
             voices,
             config: Mutex::new(config),
         })
     }
 
+    fn start_model_preload(
+        models_path: &Path,
+        voice_id: &str,
+        slot: Arc<OnceLock<Result<Mutex<Piper>, String>>>,
+    ) {
+        let model_path = models_path.join(format!("{voice_id}.onnx"));
+        let config_path = models_path.join(format!("{voice_id}.onnx.json"));
+        let _ = std::thread::Builder::new()
+            .name(format!("piper-init-{voice_id}"))
+            .spawn(move || {
+                slot.get_or_init(|| Piper::new(&model_path, &config_path)
+                    .map(Mutex::new)
+                    .map_err(|error| error.to_string()));
+            });
+    }
+
+    fn model_slot(&self, voice_id: &str) -> Result<Arc<OnceLock<Result<Mutex<Piper>, String>>>, TTSError> {
+        let mut models = self.models.lock().map_err(|_| TTSError::Internal("Piper model map poisoned".into()))?;
+        Ok(Arc::clone(models.entry(voice_id.to_owned()).or_insert_with(|| {
+            let slot = Arc::new(OnceLock::new());
+            Self::start_model_preload(&self.models_path, voice_id, Arc::clone(&slot));
+            slot
+        })))
+    }
+
+    fn voice_for_language(&self, language: &str) -> Result<String, TTSError> {
+        let language = language.trim().to_lowercase().replace('-', "_");
+        let language = match language.as_str() {
+            "english" => "en".to_owned(),
+            "russian" | "русский" => "ru".to_owned(),
+            other => other.to_owned(),
+        };
+        self.voices.values()
+            .find(|voice| voice.language.to_lowercase().starts_with(&language))
+            .map(|voice| voice.id.clone())
+            .ok_or_else(|| TTSError::VoiceNotFound(format!("voice for language {language}")))
+    }
+
     pub fn resource_path() -> PathBuf {
-        std::env::current_exe()
+        let bundled = std::env::current_exe()
             .ok()
             .and_then(|path| {
                 path.parent().map(Path::to_path_buf)
             })
             .unwrap_or_else(|| PathBuf::from("."))
+            .join("resources")
+            .join("piper-models");
+
+        if bundled.exists() {
+            return bundled;
+        }
+
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
             .join("piper-models")
     }
@@ -203,7 +247,7 @@ impl PiperProvider {
                 )
             })?;
 
-        if let Some(voice_id) = &config.voice_id {
+        if let Some(voice_id) = &config.voice {
             return Ok(voice_id.clone());
         }
 
@@ -232,6 +276,20 @@ impl TTSProvider for PiperProvider {
 
     fn voices(&self) -> Result<Vec<TTSVoice>, TTSError> {
         Ok(self.voices.values().cloned().collect())
+    }
+
+    fn prepare_language(&self, language: &str) -> Result<(), TTSError> {
+        let voice_id = self.voice_for_language(language)?;
+        {
+            let mut config = self.config.lock().map_err(|_| TTSError::Internal("TTS config mutex poisoned".into()))?;
+            config.voice = Some(voice_id.clone());
+        }
+        self.stop();
+        self.models.lock()
+            .map_err(|_| TTSError::Internal("Piper model map poisoned".into()))?
+            .retain(|loaded_voice, _| loaded_voice == &voice_id);
+        let _ = self.model_slot(&voice_id)?;
+        Ok(())
     }
 
     fn default_voice(&self) -> Result<TTSVoice, TTSError> {
@@ -273,6 +331,7 @@ impl TTSProvider for PiperProvider {
 
         let config =
             self.current_config()?;
+        let model = self.model_slot(&voice_id)?;
 
         /*
          * Piper inference CPU-heavy.
@@ -281,16 +340,14 @@ impl TTSProvider for PiperProvider {
          */
         let (samples, sample_rate) =
             tokio::task::spawn_blocking(move || {
-                let mut piper =
-                    Piper::new(
-                        &onnx_path,
-                        &config_path,
-                    )
-                    .map_err(|error| {
-                        TTSError::Internal(
-                            error.to_string(),
-                        )
-                    })?;
+                let piper = model.get_or_init(|| {
+                    Piper::new(&onnx_path, &config_path)
+                        .map(Mutex::new)
+                        .map_err(|error| error.to_string())
+                }).as_ref().map_err(|error| TTSError::Internal(error.clone()))?;
+                let mut piper = piper.lock().map_err(|_| {
+                    TTSError::Internal("Piper model lock poisoned".into())
+                })?;
 
                 piper
                     .create(
@@ -314,114 +371,42 @@ impl TTSProvider for PiperProvider {
                 )
             })??;
 
-        /*
-         * rodio 0.22:
-         *
-         * OutputStream
-         *      ↓
-         * mixer()
-         *      ↓
-         * Sink::connect_new()
-         */
-        let sink =
-            Sink::connect_new(
-                self.output_stream.mixer()
-            );
-
-        sink.set_volume(
-            config.volume as f32
-        );
-
-        sink.set_speed(
-            config.rate as f32
-        );
+        self.player.set_volume(config.volume);
+        self.player.set_speed(config.rate);
+        let channels = NonZeroU16::new(1).expect("one channel is non-zero");
+        let sample_rate = NonZeroU32::new(sample_rate).ok_or_else(|| {
+            TTSError::Audio("Piper returned an invalid sample rate".into())
+        })?;
 
         let source =
             SamplesBuffer::new(
-                1,
+                channels,
                 sample_rate,
                 samples,
             );
-
-        sink.append(source);
-
-        let mut playback =
-            self.playback
-                .lock()
-                .map_err(|_| {
-                    TTSError::Internal(
-                        "Playback mutex poisoned"
-                            .into(),
-                    )
-                })?;
-
-        playback.sink =
-            Some(sink);
+        self.player.append(source);
 
         Ok(())
     }
 
     fn stop(&self) {
-        if let Ok(mut playback) =
-            self.playback.lock()
-        {
-            if let Some(sink) =
-                playback.sink.take()
-            {
-                sink.stop();
-            }
-        }
+        self.player.stop();
     }
 
     fn pause(&self) {
-        if let Ok(playback) =
-            self.playback.lock()
-        {
-            if let Some(sink) =
-                playback.sink.as_ref()
-            {
-                sink.pause();
-            }
-        }
+        self.player.pause();
     }
 
     fn resume(&self) {
-        if let Ok(playback) =
-            self.playback.lock()
-        {
-            if let Some(sink) =
-                playback.sink.as_ref()
-            {
-                sink.play();
-            }
-        }
+        self.player.play();
     }
 
     fn is_paused(&self) -> bool {
-        self.playback
-            .lock()
-            .ok()
-            .and_then(|playback| {
-                playback.sink.as_ref()
-                    .map(|sink| {
-                        sink.is_paused()
-                    })
-            })
-            .unwrap_or(false)
+        self.player.is_paused()
     }
 
     fn is_playing(&self) -> bool {
-        self.playback
-            .lock()
-            .ok()
-            .and_then(|playback| {
-                playback.sink.as_ref()
-                    .map(|sink| {
-                        !sink.is_paused()
-                            && !sink.empty()
-                    })
-            })
-            .unwrap_or(false)
+        !self.player.is_paused() && !self.player.empty()
     }
 
     fn set_volume(
@@ -431,21 +416,12 @@ impl TTSProvider for PiperProvider {
         let volume =
             volume.clamp(0.0, 1.0);
 
-        if let Ok(playback) =
-            self.playback.lock()
-        {
-            if let Some(sink) =
-                playback.sink.as_ref()
-            {
-                sink.set_volume(volume);
-            }
-        }
+        self.player.set_volume(volume);
 
         if let Ok(mut config) =
             self.config.lock()
         {
-            config.volume =
-                volume as f64;
+            config.volume = volume;
         }
     }
 
@@ -456,21 +432,12 @@ impl TTSProvider for PiperProvider {
         let speed =
             speed.clamp(0.1, 3.0);
 
-        if let Ok(playback) =
-            self.playback.lock()
-        {
-            if let Some(sink) =
-                playback.sink.as_ref()
-            {
-                sink.set_speed(speed);
-            }
-        }
+        self.player.set_speed(speed);
 
         if let Ok(mut config) =
             self.config.lock()
         {
-            config.rate =
-                speed as f64;
+            config.rate = speed;
         }
     }
 
@@ -487,8 +454,7 @@ impl TTSProvider for PiperProvider {
         if let Ok(mut config) =
             self.config.lock()
         {
-            config.pitch =
-                pitch as f64;
+            config.pitch = pitch;
         }
 
         /*
@@ -503,7 +469,7 @@ impl TTSProvider for PiperProvider {
         config: TTSConfig,
     ) -> Result<(), TTSError> {
         if let Some(voice_id) =
-            &config.voice_id
+            &config.voice
         {
             if !self.voices.contains_key(
                 voice_id

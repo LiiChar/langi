@@ -128,7 +128,11 @@ impl TranslationService {
         &self,
         mode: TranslationMode,
     ) {
-        *self.inner.mode.write().await = mode;
+        let mut current = self.inner.mode.write().await;
+        if *current != mode {
+            *current = mode;
+            self.inner.cache.clear();
+        }
     }
 
     pub async fn mode(&self) -> TranslationMode {
@@ -137,6 +141,10 @@ impl TranslationService {
 
     pub fn clear_cache(&self) {
         self.inner.cache.clear();
+    }
+
+    pub fn set_local_dictionary_directory(&self, directory: std::path::PathBuf) {
+        self.inner.local.set_directory(directory);
     }
 
     pub fn cache_size(&self) -> usize {
@@ -168,52 +176,56 @@ impl TranslationService {
             text,
         );
 
-        // --------------------------------------------------------------------
-        // Cache
-        // --------------------------------------------------------------------
-
-        if let Some(value) =
-            self.inner.cache.get(&key)
-        {
-            return Ok(Translation::new(
-                value,
-                TranslationSource::Cache,
-            ));
-        }
-
         let mode = self.mode().await;
 
-        // --------------------------------------------------------------------
-        // OnlineFirst / OfflineFirst
-        // --------------------------------------------------------------------
-
-        if mode != TranslationMode::OnlineOnly {
-            let value = self
-                .translate_online(
-                    text,
-                    &from,
-                    &to,
-                )
-                .await?;
-
-            self.inner.cache.insert(
-                key,
-                value.clone(),
-            );
-
-            return Ok(Translation::new(
-                value,
-                TranslationSource::Online,
-            ))
+        if let Some(value) = self.inner.cache.get(&key) {
+            return Ok(Translation::new(value, TranslationSource::Cache));
         }
 
-        if mode == TranslationMode::OfflineOnly {
+        // OnlineFirst really consults the online provider before WikDict.
+        // Do not cache a local fallback in this mode, otherwise later calls
+        // would bypass the online provider despite the selected priority.
+        if mode == TranslationMode::OnlineFirst {
+            if let Ok(value) = self.translate_online(text, &from, &to).await {
+                self.inner.cache.insert(key, value.clone());
+                return Ok(Translation::new(value, TranslationSource::Online));
+            }
+            let value = self.inner.local.translate(text, &from, &to)?;
+            let translation = value.translations.first().ok_or(TranslationError::NotFound)?.clone();
+            return Ok(Translation::new(translation, TranslationSource::LocalDictionary));
+        }
+
+        if mode == TranslationMode::OfflineFirst {
+            let local = self.inner.local.translate(text, &from, &to).ok();
+            if let Some(value) = local.as_ref().filter(|value| value.fully_translated) {
+                let translation = value.translations.first().ok_or(TranslationError::NotFound)?.clone();
+                self.inner.cache.insert(key, translation.clone());
+                return Ok(Translation::new(translation, TranslationSource::LocalDictionary));
+            }
+
+            if let Ok(value) = self.translate_online(text, &from, &to).await {
+                self.inner.cache.insert(key, value.clone());
+                return Ok(Translation::new(value, TranslationSource::Online));
+            }
+            if let Some(value) = local {
+                if let Some(translation) = value.translations.first() {
+                    return Ok(Translation::new(translation.clone(), TranslationSource::LocalDictionary));
+                }
+            }
             return Err(TranslationError::NotFound);
         }
 
-        // --------------------------------------------------------------------
-        // Online
-        // --------------------------------------------------------------------
+        if mode != TranslationMode::OnlineOnly {
+            if let Ok(value) = self.inner.local.translate(text, &from, &to) {
+                if let Some(translation) = value.translations.first() {
+                    self.inner.cache.insert(key, translation.clone());
+                    return Ok(Translation::new(translation, TranslationSource::LocalDictionary));
+                }
+            }
+            if mode == TranslationMode::OfflineOnly {
+                return Err(TranslationError::NotFound);
+            }
+        }
 
         let value = self
             .translate_online(
@@ -257,83 +269,7 @@ impl TranslationService {
         from: impl AsRef<str>,
         to: impl AsRef<str>,
     ) -> Result<Translation, TranslationError> {
-        let word = word.as_ref().trim();
-
-        if word.is_empty() {
-            return Err(TranslationError::EmptyInput);
-        }
-
-        let from = normalize_language(from.as_ref());
-        let to = normalize_language(to.as_ref());
-
-        let key = CacheKey::new(
-            &from,
-            &to,
-            word,
-        );
-
-        if let Some(value) =
-            self.inner.cache.get(&key)
-        {
-            return Ok(Translation::new(
-                value,
-                TranslationSource::Cache,
-            ));
-        }
-
-        let mode = self.mode().await;
-
-        // Для слова локальный словарь имеет приоритет.
-        if mode != TranslationMode::OnlineOnly {
-            let value = self.inner.local.translate(
-                word,
-                &from,
-                &to,
-            )?;
-
-            let translation = match value.translations.first() {
-                Some(v) => {
-                    v
-                }
-                None => {
-                    return Err(TranslationError::NotFound)
-                }
-            };
-
-            self.inner.cache.insert(
-                key.clone(),
-                translation.clone(),
-            );
-
-            return Ok(Translation::new(
-                translation,
-                TranslationSource::LocalDictionary,
-            ));
-        }
-
-        if mode == TranslationMode::OfflineOnly {
-            return Err(
-                TranslationError::NotFound
-            );
-        }
-
-        let value = self
-            .translate_online(
-                word,
-                &from,
-                &to,
-            )
-            .await?;
-
-        self.inner.cache.insert(
-            key,
-            value.clone(),
-        );
-
-        Ok(Translation::new(
-            value,
-            TranslationSource::Online,
-        ))
+        self.translate(word, from, to).await
     }
 
     // ========================================================================
@@ -348,6 +284,15 @@ impl TranslationService {
     ) -> Result<Vec<Translation>, TranslationError> {
         if texts.is_empty() {
             return Ok(Vec::new());
+        }
+
+        let mode = self.mode().await;
+        if matches!(mode, TranslationMode::OnlineFirst | TranslationMode::OfflineFirst) {
+            let mut translations = Vec::with_capacity(texts.len());
+            for text in texts {
+                translations.push(self.translate(text, from.as_ref(), to.as_ref()).await?);
+            }
+            return Ok(translations);
         }
 
         let from = normalize_language(from.as_ref());

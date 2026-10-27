@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useMemo,
   useRef,
 } from "react";
 
@@ -100,10 +101,16 @@ const getElementWords = (
     return [];
   }
 
-  return extractWordsFromHtml(
-    element.text,
-  );
+  let words = wordsByElement.get(element);
+  if (!words) {
+    words = extractWordsFromHtml(element.text);
+    wordsByElement.set(element, words);
+  }
+  return words;
 };
+
+// Paragraph objects are stable for the lifetime of a parsed chapter.
+const wordsByElement = new WeakMap<ContentElement, string[]>();
 
 const getRangeIds = (
   elements: CompletedElement[],
@@ -237,18 +244,17 @@ const getSelectedText = (
 
   const wordsById =
     new Map<string, string>();
+  const remainingIds = new Set(selectedIds);
 
   for (const item of elements) {
+    if (remainingIds.size === 0) break;
+
     const words =
       getElementWords(
         item.element,
       );
 
-    for (
-      let wordIndex = 0;
-      wordIndex < words.length;
-      wordIndex++
-    ) {
+    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
       const id =
         getReaderWordId({
           chapterIndex:
@@ -258,24 +264,8 @@ const getSelectedText = (
           wordIndex,
         });
 
-      for (
-        let wordIndex = 0;
-        wordIndex < words.length;
-        wordIndex++
-      ) {
-        const id =
-          getReaderWordId({
-            chapterIndex:
-              item.chapterIndex,
-            elementIndex:
-              item.elementIndex,
-            wordIndex,
-          });
-
-        wordsById.set(
-          id,
-          words[wordIndex],
-        );
+      if (remainingIds.delete(id)) {
+        wordsById.set(id, words[wordIndex]);
       }
     }
   }
@@ -303,6 +293,8 @@ export const useReaderSelection = (
       (state) =>
         state.selectedIds,
     );
+  const selectedIdsRef = useRef(selectedIds);
+  selectedIdsRef.current = selectedIds;
 
   const setSelectedIds =
     useReaderStore(
@@ -479,9 +471,9 @@ export const useReaderSelection = (
 
   const isSelected = useCallback(
     (id: string) => {
-      return selectedIds.includes(id);
+      return selectedIdsRef.current.includes(id);
     },
-    [selectedIds],
+    [],
   );
 
   const isSelectionStarted =
@@ -491,14 +483,11 @@ export const useReaderSelection = (
       );
     }, []);
 
-  return {
-    selectedIds,
-
+  return useMemo(() => ({
     startSelection,
     updateSelection,
     finishSelection,
-
     isSelected,
     isSelectionStarted,
-  };
+  }), [startSelection, updateSelection, finishSelection, isSelected, isSelectionStarted]);
 };

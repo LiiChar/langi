@@ -241,6 +241,7 @@ impl UserWordRepository
                     lapses,
                     favorite,
                     state,
+                    first_seen_at,
                     last_seen_at,
                     last_reviewed_at,
                     next_review_at
@@ -260,7 +261,8 @@ impl UserWordRepository
                     ?12,
                     ?13,
                     ?14,
-                    ?15
+                    ?15,
+                    ?16
                 )
                 ON CONFLICT (
                     user_id,
@@ -297,6 +299,9 @@ impl UserWordRepository
                     state =
                         excluded.state,
 
+                    first_seen_at =
+                        excluded.first_seen_at,
+
                     last_seen_at =
                         excluded.last_seen_at,
 
@@ -321,6 +326,10 @@ impl UserWordRepository
                     word_state_to_string(
                         &word.state
                     ),
+                    word.first_seen_at
+                        .map(|value|
+                            value.to_rfc3339()
+                        ),
                     word.last_seen_at
                         .map(|value|
                             value.to_rfc3339()
@@ -376,6 +385,7 @@ impl UserWordRepository
                         lapses,
                         favorite,
                         state,
+                        first_seen_at,
                         last_seen_at,
                         last_reviewed_at,
                         next_review_at
@@ -458,6 +468,7 @@ impl UserWordRepository
                         lapses,
                         favorite,
                         state,
+                        first_seen_at,
                         last_seen_at,
                         last_reviewed_at,
                         next_review_at
@@ -530,6 +541,7 @@ impl UserWordRepository
                         lapses,
                         favorite,
                         state,
+                        first_seen_at,
                         last_seen_at,
                         last_reviewed_at,
                         next_review_at

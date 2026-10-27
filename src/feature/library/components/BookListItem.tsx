@@ -1,6 +1,6 @@
 import { Book } from "@/entities/book/book.type";
 import { BookImage, ChevronRight } from "lucide-react";
-import { HTMLAttributes, useEffect, useState } from "react";
+import { HTMLAttributes } from "react";
 
 export type BookCardProps = {
   book: Book;
@@ -15,21 +15,14 @@ export function BookListItem({
   className,
   ...rest
 }: BookCardProps) {
-  const [percent, setPercent] = useState(0);
-
-  useEffect(() => {
-    // const value = calculateReadingProgress(book);
-
-    // setPercent(value);
-  }, [book]);
-
+  const percent = Math.max(0, Math.min(100, book.meta.progress_read ?? 0));
   return (
     <div
       {...rest}
       className={`
         flex items-center gap-4 cursor-pointer w-full
-        bg-secondary
-        hover:bg-secondary/60
+        bg-card
+        hover:bg-card/60
         transition-all duration- *:150
         animate-fade-in
         rounded-lg pr-3
@@ -50,7 +43,7 @@ export function BookListItem({
       )}
 
       {/* Cover */}
-      <div className="w-12 h-16 rounded-md overflow-hidden bg-secondary-hover/60 shrink-0 relative z-10">
+      <div className="w-12 h-16 rounded-md overflow-hidden bg-card-hover/60 shrink-0 relative z-10">
         {book.meta.cover_path ? (
           <img
             src={book.meta.cover_path}

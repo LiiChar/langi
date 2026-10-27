@@ -4,6 +4,8 @@ import { VisibleElement } from "../hooks/useReader";
 
 interface ReaderStore {
   book: Book | null;
+  chapterId: string;
+  elementId: string;
   elements: VisibleElement[];
   translation: string;
   selectedIds: string[];
@@ -25,6 +27,14 @@ interface ReaderActions {
   setElements: (
     elements: VisibleElement[],
   ) => void;
+
+  setChapterId: (
+    chapterId: string,
+  ) => void;
+
+  setElementId: (
+    elementId: string,
+  ) => void;
 }
 
 export const useReaderStore =
@@ -32,6 +42,8 @@ export const useReaderStore =
     ReaderStore & ReaderActions
   >((set) => ({
     book: null,
+    chapterId: "",
+    elementId: "",
     elements: [],
     translation: "",
     selectedIds: [],
@@ -39,7 +51,12 @@ export const useReaderStore =
     setSelectedIds: (
       selectedIds,
     ) =>
-      set({ selectedIds }),
+      set((state) =>
+        state.selectedIds.length === selectedIds.length &&
+        state.selectedIds.every((id, index) => id === selectedIds[index])
+          ? state
+          : { selectedIds },
+      ),
 
     setTranslation: (
       translation,
@@ -53,4 +70,13 @@ export const useReaderStore =
       elements,
     ) =>
       set({ elements }),
+
+    setChapterId: (
+      chapterId,
+    ) =>
+      set({ chapterId }),
+    setElementId: (
+      elementId,
+    ) =>
+      set({ elementId }),
   }));

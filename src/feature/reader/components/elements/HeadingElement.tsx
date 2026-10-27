@@ -1,18 +1,20 @@
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "#ui/popover";
-import { HeadingElementType, ParagraphElementType } from "../lib/paragraph";
+import { HeadingElementType } from "../../lib/paragraph";
 
 export type ParagraphElementProps = {
   element: HeadingElementType
 };
 
 export const HeadingElement = ({ element }: ParagraphElementProps) => {
-  const words = element.text.split(' ');
+  const parts = element.text.split(/(\s+)/);
 
   return (
-    <div className="flex gap-1 flex-wrap">
-      {words.map((word, index) => (
+    <div className="flex flex-wrap">
+      {parts.map((part, index) => /\s+/.test(part) ? (
+        <span key={index}>{part}</span>
+      ) : (
         <Popover key={index}>
-          <PopoverTrigger openOnHover render={<span className="border-b border-dashed border-foreground">{word}</span>} />
+          <PopoverTrigger openOnHover render={<span className="border-b border-dashed border-foreground">{part}</span>} />
           <PopoverContent>
             <PopoverHeader>
               <PopoverTitle>Title</PopoverTitle>

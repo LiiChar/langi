@@ -1,42 +1,47 @@
-import { BookGrid } from "../components/BookGrid"
-import { BookList } from "../components/BookList"
+import { BookCollection } from "../components/BookCollection"
 import { useLibraryStore } from "../store/LibraryStore"
-import { useLibrary } from "../hooks/useLibrary"
 import { useNavigate } from "@tanstack/react-router"
 import { useBooksStore } from "@/feature/book/store/BookStore"
 import { useEffect, useRef, useState } from "react"
 import { Book } from "@/entities/book/book.type"
-import { commands, DownloadEvent, events } from "@/shared/commands/bindings"
+import { commands, events } from "@/shared/commands/bindings"
 import { convertBook } from "@/shared/commands/import"
-import { ButtonGroup } from "#ui/button-group"
-import { Button } from "#ui/button"
 import { toast } from "#ui/toast"
 import { formatFileSize } from "#lib/text"
+import { useI18n } from "@/shared/i18n"
+import { useDiscoverStore } from "../store/DiscoverStore"
+import { PageHeading } from "#ui/page-heading"
 
 export const BrowserPage = () => {
-  const { page, viewMode, variant } = useLibraryStore()
+  const { page, variant } = useLibraryStore()
   const setSelectedBookId = useBooksStore((state) => state.setSelectedBook);
   const [books, setBooks] = useState<Book[]>([]);
-  const [provider, setProvider] = useState("");
-  const [providers, setProviders] = useState<string[]>([]);
+  const [loadedProvider, setLoadedProvider] = useState("");
+  const provider = useDiscoverStore((state) => state.provider);
+  const setProvider = useDiscoverStore((state) => state.setProvider);
+  const setProviders = useDiscoverStore((state) => state.setProviders);
+  const query = useDiscoverStore((state) => state.query);
+  const [loading, setLoading] = useState(false);
+  const { t } = useI18n();
+  const translateRef = useRef(t);
+  translateRef.current = t;
+  const setLibraryBooks = useBooksStore((state) => state.setBooks);
   const navigate = useNavigate();
   const toastId = useRef("")
 
   const selected = books[page]?.id;
 
   useEffect(() => {
-
-    const fetchBooks = async () => {
-      const provider = await commands.getBrowserProviders();
-      setProviders(provider);
-      setProvider(provider[0]);
-      const result = await commands.getBrowserBooks(provider[0]);
-      if(result.status === "ok") {
-        setBooks(result.data.map(convertBook));
-      }
+    let active = true;
+    const fetchProviders = async () => {
+      const providerList = await commands.getBrowserProviders();
+      if (!active) return;
+      setProviders(providerList);
+      const currentProvider = useDiscoverStore.getState().provider;
+      if (providerList[0] && !providerList.includes(currentProvider)) setProvider(providerList[0]);
     };
 
-    events.downloadEvent.listen((evt) => {
+    const unlisten = events.downloadEvent.listen((evt) => {
       if (evt.event == "download-event") {
         if (evt.payload.event_type == "Progress") {
           if (toastId.current == "") {
@@ -57,8 +62,31 @@ export const BrowserPage = () => {
       }
     });
 
-    fetchBooks();
-  }, [])
+    void fetchProviders();
+    return () => { active = false; void unlisten.then((dispose) => dispose()); };
+  }, [setProvider, setProviders]);
+
+  useEffect(() => {
+    if (!provider) return;
+    let active = true;
+    setLoading(true);
+    void commands.getBrowserBooks(provider)
+      .then((result) => {
+        if (!active) return;
+        if (result.status === "ok") {
+          setBooks(result.data.map(convertBook));
+          setLoadedProvider(provider);
+        } else {
+          toast.add({ title: translateRef.current("common.error"), description: String(result.error) });
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) toast.add({ title: translateRef.current("common.error"), description: String(error) });
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [provider]);
+  const visibleBooks = books.filter((book) => `${book.meta.title} ${book.meta.author ?? ""} ${book.meta.description ?? ""}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
 
   const handleBookClick = async (bookId: string) => {
     toast.promise(
@@ -71,7 +99,8 @@ export const BrowserPage = () => {
           const bookParsed = await commands.commandParseBook(book.data.meta.path);
           if (bookParsed.status === "error") reject(bookParsed.error);
           if (bookParsed.status === "ok") {
-            resolve({ name: bookParsed.data.meta.title, id: bookId });
+            setLibraryBooks([...useBooksStore.getState().books.filter((b) => b.id !== bookParsed.data.id), convertBook(bookParsed.data)]);
+            resolve({ name: bookParsed.data.meta.title, id: bookParsed.data.id });
           }
         }
       }),
@@ -80,7 +109,8 @@ export const BrowserPage = () => {
           title: "Загрузка книги...",
         },
         success: (data) => {
-          navigate({ to: `/book/${bookId}/read`});
+          setSelectedBookId(data.id);
+          navigate({ to: `/book/${data.id}/read`});
           return `Книга ${data.name} скачена.`;
         },
         error: (err) => `Error: ${err}`,
@@ -89,20 +119,11 @@ export const BrowserPage = () => {
   }
 
   return (
-    <div className="p-2 window">
+    <div className="window gap-4 p-2">
+      <PageHeading title={t("browser.title")} description={t("browser.subtitle")} />
       {
-        variant == "grid"
-        ? <BookGrid selectedBookId={selected} books={books} onClick={handleBookClick} />
-        : <BookList selectedBookId={selected} books={books} onClick={handleBookClick} />
+        loading && loadedProvider !== provider ? <p className="surface p-10 text-center text-muted-foreground">{t("browser.loading")}</p> : loadedProvider !== provider || visibleBooks.length === 0 ? <p className="surface p-10 text-center text-muted-foreground">{t("browser.noResults")}</p> : <BookCollection variant={variant} selectedBookId={selected} books={visibleBooks} onBookClick={handleBookClick} />
       }
-
-      <ButtonGroup className="absolute top-12 right-5">
-        {
-          providers.map((provider) => (
-            <Button key={provider}>{provider}</Button>
-          ))
-        }
-      </ButtonGroup>
     </div>
   )
 }

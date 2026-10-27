@@ -34,7 +34,7 @@ thiserror = "2"
 log = "0.4"
 tauri-plugin-log = "2"
 tokio = { version = "1", features = ["time"] }
-document-parser = "0.1.0-alpha.1"
+document-parser = "0.1.0-alpha.16"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 specta = { version = "=2.0.0-rc.22", features = ["derive"] }
@@ -54,4 +54,4 @@ windows = { version = "0.62.2", features = [
     "Media_SpeechSynthesis",
     "Storage_Streams",
 ] }
-piper-rs = "0.2.0"
+piper-rs = { path = "vendor/piper-rs" }

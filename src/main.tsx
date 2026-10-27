@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "./shared/styles/theme.css";
 import "./shared/styles/main.css";
 
 import { routeTree } from './routeTree.gen'

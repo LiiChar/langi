@@ -11,6 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BrowserIndexRouteImport } from './routes/browser/index'
+import { Route as DictionariesIndexRouteImport } from './routes/dictionaries/index'
+import { Route as GoalsIndexRouteImport } from './routes/goals/index'
+import { Route as ReviewIndexRouteImport } from './routes/review/index'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as StatisticsIndexRouteImport } from './routes/statistics/index'
+import { Route as VocabularyIndexRouteImport } from './routes/vocabulary/index'
 import { Route as BookBookIdIndexRouteImport } from './routes/book/$bookId/index'
 import { Route as BookBookIdReadIndexRouteImport } from './routes/book/$bookId/read/index'
 
@@ -22,6 +28,36 @@ const IndexRoute = IndexRouteImport.update({
 const BrowserIndexRoute = BrowserIndexRouteImport.update({
   id: '/browser/',
   path: '/browser/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DictionariesIndexRoute = DictionariesIndexRouteImport.update({
+  id: '/dictionaries/',
+  path: '/dictionaries/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GoalsIndexRoute = GoalsIndexRouteImport.update({
+  id: '/goals/',
+  path: '/goals/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewIndexRoute = ReviewIndexRouteImport.update({
+  id: '/review/',
+  path: '/review/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatisticsIndexRoute = StatisticsIndexRouteImport.update({
+  id: '/statistics/',
+  path: '/statistics/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VocabularyIndexRoute = VocabularyIndexRouteImport.update({
+  id: '/vocabulary/',
+  path: '/vocabulary/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BookBookIdIndexRoute = BookBookIdIndexRouteImport.update({
@@ -38,12 +74,24 @@ const BookBookIdReadIndexRoute = BookBookIdReadIndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/browser/': typeof BrowserIndexRoute
+  '/dictionaries/': typeof DictionariesIndexRoute
+  '/goals/': typeof GoalsIndexRoute
+  '/review/': typeof ReviewIndexRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/statistics/': typeof StatisticsIndexRoute
+  '/vocabulary/': typeof VocabularyIndexRoute
   '/book/$bookId/': typeof BookBookIdIndexRoute
   '/book/$bookId/read/': typeof BookBookIdReadIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/browser': typeof BrowserIndexRoute
+  '/dictionaries': typeof DictionariesIndexRoute
+  '/goals': typeof GoalsIndexRoute
+  '/review': typeof ReviewIndexRoute
+  '/settings': typeof SettingsIndexRoute
+  '/statistics': typeof StatisticsIndexRoute
+  '/vocabulary': typeof VocabularyIndexRoute
   '/book/$bookId': typeof BookBookIdIndexRoute
   '/book/$bookId/read': typeof BookBookIdReadIndexRoute
 }
@@ -51,20 +99,63 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/browser/': typeof BrowserIndexRoute
+  '/dictionaries/': typeof DictionariesIndexRoute
+  '/goals/': typeof GoalsIndexRoute
+  '/review/': typeof ReviewIndexRoute
+  '/settings/': typeof SettingsIndexRoute
+  '/statistics/': typeof StatisticsIndexRoute
+  '/vocabulary/': typeof VocabularyIndexRoute
   '/book/$bookId/': typeof BookBookIdIndexRoute
   '/book/$bookId/read/': typeof BookBookIdReadIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/browser/' | '/book/$bookId/' | '/book/$bookId/read/'
+  fullPaths:
+    | '/'
+    | '/browser/'
+    | '/dictionaries/'
+    | '/goals/'
+    | '/review/'
+    | '/settings/'
+    | '/statistics/'
+    | '/vocabulary/'
+    | '/book/$bookId/'
+    | '/book/$bookId/read/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/browser' | '/book/$bookId' | '/book/$bookId/read'
-  id: '__root__' | '/' | '/browser/' | '/book/$bookId/' | '/book/$bookId/read/'
+  to:
+    | '/'
+    | '/browser'
+    | '/dictionaries'
+    | '/goals'
+    | '/review'
+    | '/settings'
+    | '/statistics'
+    | '/vocabulary'
+    | '/book/$bookId'
+    | '/book/$bookId/read'
+  id:
+    | '__root__'
+    | '/'
+    | '/browser/'
+    | '/dictionaries/'
+    | '/goals/'
+    | '/review/'
+    | '/settings/'
+    | '/statistics/'
+    | '/vocabulary/'
+    | '/book/$bookId/'
+    | '/book/$bookId/read/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BrowserIndexRoute: typeof BrowserIndexRoute
+  DictionariesIndexRoute: typeof DictionariesIndexRoute
+  GoalsIndexRoute: typeof GoalsIndexRoute
+  ReviewIndexRoute: typeof ReviewIndexRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+  StatisticsIndexRoute: typeof StatisticsIndexRoute
+  VocabularyIndexRoute: typeof VocabularyIndexRoute
   BookBookIdIndexRoute: typeof BookBookIdIndexRoute
   BookBookIdReadIndexRoute: typeof BookBookIdReadIndexRoute
 }
@@ -83,6 +174,48 @@ declare module '@tanstack/react-router' {
       path: '/browser'
       fullPath: '/browser/'
       preLoaderRoute: typeof BrowserIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dictionaries/': {
+      id: '/dictionaries/'
+      path: '/dictionaries'
+      fullPath: '/dictionaries/'
+      preLoaderRoute: typeof DictionariesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/goals/': {
+      id: '/goals/'
+      path: '/goals'
+      fullPath: '/goals/'
+      preLoaderRoute: typeof GoalsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review/': {
+      id: '/review/'
+      path: '/review'
+      fullPath: '/review/'
+      preLoaderRoute: typeof ReviewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/statistics/': {
+      id: '/statistics/'
+      path: '/statistics'
+      fullPath: '/statistics/'
+      preLoaderRoute: typeof StatisticsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vocabulary/': {
+      id: '/vocabulary/'
+      path: '/vocabulary'
+      fullPath: '/vocabulary/'
+      preLoaderRoute: typeof VocabularyIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/book/$bookId/': {
@@ -105,6 +238,12 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BrowserIndexRoute: BrowserIndexRoute,
+  DictionariesIndexRoute: DictionariesIndexRoute,
+  GoalsIndexRoute: GoalsIndexRoute,
+  ReviewIndexRoute: ReviewIndexRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+  StatisticsIndexRoute: StatisticsIndexRoute,
+  VocabularyIndexRoute: VocabularyIndexRoute,
   BookBookIdIndexRoute: BookBookIdIndexRoute,
   BookBookIdReadIndexRoute: BookBookIdReadIndexRoute,
 }

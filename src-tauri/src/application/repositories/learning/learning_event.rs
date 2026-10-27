@@ -28,4 +28,10 @@ pub trait LearningEventRepository:
         &self,
         user_id: &str,
     ) -> Result<Vec<LearningEvent>, RepositoryError>;
+
+    fn find_by_user_and_book(
+        &self,
+        user_id: &str,
+        book_id: &str,
+    ) -> Result<Vec<LearningEvent>, RepositoryError>;
 }

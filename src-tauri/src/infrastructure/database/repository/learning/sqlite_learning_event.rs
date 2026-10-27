@@ -49,10 +49,10 @@ impl SqliteLearningEventRepository {
             id: row.get("id")?,
             user_id: row.get("user_id")?,
 
-            event_type: serde_json::from_str(&event_type)
+            event_type: serde_json::from_value(serde_json::Value::String(event_type))
                 .unwrap_or(LearningEventType::WordSeen),
 
-            timestamp: timestamp.parse().unwrap_or(0),
+            timestamp: timestamp.parse().unwrap_or(0.0),
 
             context: LearningEventContext {
                 book_id:
@@ -472,6 +472,34 @@ impl LearningEventRepository
                         error.to_string()
                     )
                 })?;
+
+        Ok(events)
+    }
+
+    fn find_by_user_and_book(
+        &self,
+        user_id: &str,
+        book_id: &str,
+    ) -> Result<Vec<LearningEvent>, RepositoryError> {
+        if user_id.trim().is_empty() || book_id.trim().is_empty() {
+            return Err(RepositoryError::InvalidInput(
+                "user id or book id is empty".into(),
+            ));
+        }
+
+        let connection = self.connection.lock().map_err(|_| {
+            RepositoryError::DatabaseError("failed to lock database".into())
+        })?;
+        let mut statement = connection.prepare(
+            "SELECT id, user_id, event_type, timestamp, book_id, chapter_id, element_id, word_id, exercise_id, skill_id, data
+             FROM learning_events
+             WHERE user_id = ?1 AND book_id = ?2
+             ORDER BY timestamp ASC, rowid ASC",
+        ).map_err(|error| RepositoryError::DatabaseError(error.to_string()))?;
+        let events = statement.query_map(params![user_id, book_id], Self::map_event)
+            .map_err(|error| RepositoryError::DatabaseError(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| RepositoryError::DatabaseError(error.to_string()))?;
 
         Ok(events)
     }

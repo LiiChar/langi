@@ -1,15 +1,13 @@
-import { BookGrid } from "../components/BookGrid"
-import { BookList } from "../components/BookList"
-import { useLibraryStore } from "../store/LibraryStore"
+import { BookCollection } from "../components/BookCollection"
 import { useLibrary } from "../hooks/useLibrary"
 import { useNavigate } from "@tanstack/react-router"
 import { useBooksStore } from "@/feature/book/store/BookStore"
+import { useLibraryStore } from "../store/LibraryStore"
 
 export const LibraryPage = () => {
-  const { page, viewMode, variant } = useLibraryStore()
+  const { page, variant } = useLibraryStore()
   const setSelectedBookId = useBooksStore((state) => state.setSelectedBook);
   const books = useLibrary()
-
   const navigate = useNavigate();
 
   const selected = books[page]?.id;
@@ -21,12 +19,8 @@ export const LibraryPage = () => {
   }
 
   return (
-    <div className="p-2 window">
-      {
-        variant == "grid"
-        ? <BookGrid selectedBookId={selected} books={books} onClick={handleBookClick} />
-        : <BookList selectedBookId={selected} books={books} onClick={handleBookClick} />
-      }
+    <div className="window p-2">
+      <BookCollection variant={variant} selectedBookId={selected} books={books} onBookClick={handleBookClick} />
     </div>
   )
 }

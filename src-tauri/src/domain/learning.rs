@@ -34,7 +34,7 @@ pub struct LearningEvent {
 
     pub event_type: LearningEventType,
 
-    pub timestamp: i32,
+    pub timestamp: f64,
 
     pub context: LearningEventContext,
 
@@ -139,6 +139,7 @@ pub struct LearningEventContext {
     Type,
     Event,
 )]
+#[serde(tag = "type")]
 pub enum LearningEventData {
     #[default]
     Empty,
@@ -161,6 +162,9 @@ pub enum LearningEventData {
         response_time_ms: Option<i32>,
 
         selected_answer: Option<String>,
+
+        #[serde(default)]
+        correct_answer: Option<String>,
 
         word_ids: Vec<String>,
 

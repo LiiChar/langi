@@ -1,12 +1,30 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 use chrono::{
-    DateTime, Duration, TimeZone, Utc,
+    DateTime,
+    Duration,
+    Utc,
 };
+
 use rusqlite::Connection;
+use crate::domain::config::LearningConfig;
 
 use crate::{
-    application::repositories::{error::RepositoryError, learning::{book_reading_progress::BookReadingProgressRepository, learning_event::LearningEventRepository, user_level::UserLevelRepository, user_skill::UserSkillRepository, user_word::UserWordRepository}}, domain::learning::{
+    application::repositories::{
+        error::RepositoryError,
+        learning::{
+            book_reading_progress::BookReadingProgressRepository,
+            learning_event::LearningEventRepository,
+            user_level::UserLevelRepository,
+            user_skill::UserSkillRepository,
+            user_word::UserWordRepository,
+        },
+    },
+
+    domain::learning::{
         BookReadingProgress,
         CefrLevel,
         LearningActivity,
@@ -17,8 +35,42 @@ use crate::{
         UserSkill,
         UserWord,
         WordState,
-    }, infrastructure::database::repository::{book::sqlite_book_reading_progress::SqliteBookReadingProgressRepository, learning::{sqlite_learning_event::SqliteLearningEventRepository, sqlite_user_level::SqliteUserLevelRepository, sqlite_user_skill::SqliteUserSkillRepository, sqlite_user_word::SqliteUserWordRepository}},
+    },
+
+    infrastructure::database::repository::{
+        book::sqlite_book_reading_progress::SqliteBookReadingProgressRepository,
+
+        learning::{
+            sqlite_learning_event::SqliteLearningEventRepository,
+            sqlite_user_level::SqliteUserLevelRepository,
+            sqlite_user_skill::SqliteUserSkillRepository,
+            sqlite_user_word::SqliteUserWordRepository,
+        },
+    },
 };
+
+//
+// ============================================================
+// CONFIG
+// ============================================================
+//
+
+/// Минимальное количество прочитанных абзацев
+/// между двумя learning-активностями.
+const MIN_PARAGRAPHS_BETWEEN_ACTIVITIES: u32 = 4;
+
+/// Сколько последних активностей учитываем
+/// при выборе следующей.
+const RECENT_ACTIVITY_LIMIT: usize = 4;
+
+/// Первый review после осознанного открытия перевода.
+const INITIAL_REVIEW_DELAY_MINUTES: i64 = 20;
+
+//
+// ============================================================
+// ERROR
+// ============================================================
+//
 
 #[derive(Debug, thiserror::Error)]
 pub enum LearningError {
@@ -28,6 +80,45 @@ pub enum LearningError {
     #[error("repository error: {0}")]
     Repository(#[from] RepositoryError),
 }
+
+//
+// ============================================================
+// SCHEDULER
+// ============================================================
+//
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActivityKind {
+    WordReview,
+    Translation,
+    SkillExercise,
+    ComprehensionExercise,
+}
+
+#[derive(Debug)]
+struct SchedulerState {
+    paragraphs_since_activity: u32,
+    activities_this_session: usize,
+
+    recent_activities:
+        VecDeque<ActivityKind>,
+}
+
+impl Default for SchedulerState {
+    fn default() -> Self {
+        Self {
+            paragraphs_since_activity: 0,
+            activities_this_session: 0,
+            recent_activities: VecDeque::new(),
+        }
+    }
+}
+
+//
+// ============================================================
+// LEARNING ENGINE
+// ============================================================
+//
 
 #[derive(Clone)]
 pub struct LearningEngine {
@@ -45,53 +136,115 @@ pub struct LearningEngine {
 
     level_repository:
         Arc<dyn UserLevelRepository>,
+
+    //
+    // Runtime scheduler state.
+    //
+    // В дальнейшем его можно вынести в SQLite,
+    // но для текущей версии этого достаточно.
+    //
+    scheduler:
+        Arc<Mutex<SchedulerState>>,
 }
 
 impl LearningEngine {
+    pub fn exercise_events_for_book(
+        &self,
+        user_id: &str,
+        book_id: &str,
+    ) -> Result<Vec<LearningEvent>, LearningError> {
+        Ok(self.event_repository.find_by_user_and_book(user_id, book_id)?
+            .into_iter()
+            .filter(|event| matches!(
+                &event.event_type,
+                LearningEventType::ExerciseStarted
+                    | LearningEventType::QuestionAnswered
+                    | LearningEventType::ExerciseCompleted
+            ))
+            .collect())
+    }
+
+    pub fn overview(&self, user_id: &str) -> Result<(Vec<UserWord>, Vec<UserSkill>, Vec<BookReadingProgress>), LearningError> {
+        Ok((
+            self.word_repository.find_by_user(user_id)?,
+            self.skill_repository.find_by_user(user_id)?,
+            self.book_progress_repository.find_by_user(user_id)?,
+        ))
+    }
+
     pub fn new(
-        connection: Arc<Mutex<Connection>>
+        connection: Arc<Mutex<Connection>>,
     ) -> Self {
         Self {
             event_repository: Arc::new(
                 SqliteLearningEventRepository::new(
                     connection.clone(),
-                )
+                ),
             ),
 
             word_repository: Arc::new(
                 SqliteUserWordRepository::new(
                     connection.clone(),
-                )
+                ),
             ),
 
             skill_repository: Arc::new(
                 SqliteUserSkillRepository::new(
                     connection.clone(),
-                )
+                ),
             ),
 
             book_progress_repository: Arc::new(
                 SqliteBookReadingProgressRepository::new(
                     connection.clone(),
-                )
+                ),
             ),
 
             level_repository: Arc::new(
                 SqliteUserLevelRepository::new(
-                    connection.clone(),
-                )
+                    connection,
+                ),
+            ),
+
+            scheduler: Arc::new(
+                Mutex::new(
+                    SchedulerState::default()
+                ),
             ),
         }
     }
 
-    // ============================================================
+    pub fn reading_position(&self, user_id: &str, book_id: &str) -> Result<Option<(String, String)>, LearningError> {
+        match self.book_progress_repository.find(user_id, book_id) {
+            Ok(progress) => Ok(progress.last_chapter_id.zip(progress.last_element_id)),
+            Err(RepositoryError::NotFound) => Ok(None),
+            Err(error) => Err(LearningError::Repository(error)),
+        }
+    }
+
+    pub fn save_reading_position(&self, user_id: &str, book_id: &str, chapter_id: &str, element_id: &str) -> Result<(), LearningError> {
+        let mut progress = self.get_or_create_book_progress(user_id, book_id)?;
+        progress.last_chapter_id = Some(chapter_id.to_owned());
+        progress.last_element_id = Some(element_id.to_owned());
+        progress.updated_at = Utc::now();
+        self.book_progress_repository.upsert(&progress)?;
+        Ok(())
+    }
+
+    //
+    // ========================================================
     // EVENT
-    // ============================================================
+    // ========================================================
+    //
 
     pub fn process_event(
         &self,
         event: &LearningEvent,
     ) -> Result<(), LearningError> {
+        //
+        // Basic validation.
+        //
+
         if event.id.trim().is_empty() {
             return Err(
                 LearningError::InvalidEvent(
@@ -108,10 +261,10 @@ impl LearningEngine {
             );
         }
 
-        // Идемпотентность.
         //
-        // Если frontend повторно отправил событие,
-        // мы не должны применить его второй раз.
+        // Idempotency.
+        //
+
         if self
             .event_repository
             .exists(&event.id)?
@@ -119,7 +272,15 @@ impl LearningEngine {
             return Ok(());
         }
 
+        //
+        // Business logic.
+        //
+
         match event.event_type {
+            //
+            // Vocabulary
+            //
+
             LearningEventType::WordSeen => {
                 self.handle_word_seen(event)?;
             }
@@ -129,11 +290,17 @@ impl LearningEngine {
             }
 
             LearningEventType::FavoriteAdded => {
-                self.handle_favorite(event, true)?;
+                self.handle_favorite(
+                    event,
+                    true,
+                )?;
             }
 
             LearningEventType::FavoriteRemoved => {
-                self.handle_favorite(event, false)?;
+                self.handle_favorite(
+                    event,
+                    false,
+                )?;
             }
 
             LearningEventType::MarkedKnown => {
@@ -144,12 +311,21 @@ impl LearningEngine {
                 self.handle_marked_unknown(event)?;
             }
 
+            //
+            // Questions
+            //
+
             LearningEventType::QuestionAnswered => {
                 self.handle_question_answered(event)?;
             }
 
+            //
+            // Exercises
+            //
+
             LearningEventType::ExerciseStarted => {
-                // Пока telemetry.
+                // Learning state не изменяем.
+                // Scheduler сбросим после успешной записи события.
             }
 
             LearningEventType::ExerciseCompleted => {
@@ -157,8 +333,12 @@ impl LearningEngine {
             }
 
             LearningEventType::ExerciseSkipped => {
-                // Пока telemetry.
+                // Telemetry.
             }
+
+            //
+            // Reading
+            //
 
             LearningEventType::ChapterOpened => {
                 self.handle_chapter_opened(event)?;
@@ -173,7 +353,7 @@ impl LearningEngine {
             }
 
             LearningEventType::ReadingSessionStarted => {
-                // Пока telemetry.
+                // Telemetry.
             }
 
             LearningEventType::ReadingSessionFinished => {
@@ -181,20 +361,77 @@ impl LearningEngine {
             }
         }
 
-        self.recalculate_user_level(
-            &event.user_id
-        )?;
+        //
+        // Level recalculation.
+        //
 
-        // Event становится источником истины только
-        // после успешного применения бизнес-логики.
+        if !matches!(event.event_type, LearningEventType::ParagraphSeen | LearningEventType::ReadingSessionStarted) {
+            self.recalculate_user_level(&event.user_id)?;
+        }
+
+        //
+        // Event становится источником истины
+        // только после успешной бизнес-логики.
+        //
+
         self.event_repository.insert(event)?;
+
+        //
+        // Scheduler state.
+        //
+        // Делаем это только после успешной записи события.
+        //
+
+        self.handle_scheduler_event(event);
 
         Ok(())
     }
 
-    // ============================================================
-    // WORD
-    // ============================================================
+    //
+    // ========================================================
+    // SCHEDULER EVENTS
+    // ========================================================
+    //
+
+    fn handle_scheduler_event(
+        &self,
+        event: &LearningEvent,
+    ) {
+        let Ok(mut scheduler) =
+            self.scheduler.lock()
+        else {
+            return;
+        };
+
+        match event.event_type {
+            LearningEventType::ParagraphSeen => {
+                scheduler.paragraphs_since_activity =
+                    scheduler
+                        .paragraphs_since_activity
+                        .saturating_add(1);
+            }
+
+            //
+            // Любое начатое упражнение считается
+            // новой learning-сессией.
+            //
+            LearningEventType::ExerciseStarted => {
+                scheduler.paragraphs_since_activity = 0;
+            }
+
+            LearningEventType::ReadingSessionStarted => {
+                scheduler.activities_this_session = 0;
+            }
+
+            _ => {}
+        }
+    }
+
+    //
+    // ========================================================
+    // WORDS
+    // ========================================================
+    //
 
     fn get_or_create_word(
         &self,
@@ -208,19 +445,43 @@ impl LearningEngine {
             Ok(word) => Ok(word),
 
             Err(RepositoryError::NotFound) => {
-                Ok(UserWord::new(
-                    user_id.to_string(),
-                    word_id.to_string(),
-                ))
+                self.word_repository.insert(
+                    &UserWord::new(
+                        user_id.to_string(),
+                        word_id.to_string(),
+                    ),
+                )?;
+
+                Ok(
+                    self.word_repository.find(
+                        user_id,
+                        word_id,
+                    )?
+                )
             }
 
             Err(error) => {
-                Err(LearningError::Repository(
-                    error,
-                ))
+                Err(
+                    LearningError::Repository(
+                        error
+                    )
+                )
             }
         }
     }
+
+    //
+    // --------------------------------------------------------
+    // WORD SEEN
+    // --------------------------------------------------------
+    //
+    // Очень важное правило:
+    //
+    // WordSeen НЕ создаёт UserWord.
+    //
+    // Если слово ещё не вызвало интерес,
+    // мы вообще не считаем его learning-кандидатом.
+    //
 
     fn handle_word_seen(
         &self,
@@ -233,55 +494,47 @@ impl LearningEngine {
         };
 
         let mut word =
-            self.get_or_create_word(
+            match self.word_repository.find(
                 &event.user_id,
                 word_id,
-            )?;
+            ) {
+                Ok(word) => word,
+
+                //
+                // Новое слово просто встретилось.
+                //
+                Err(RepositoryError::NotFound) => {
+                    return Ok(());
+                }
+
+                Err(error) => {
+                    return Err(
+                        LearningError::Repository(
+                            error
+                        )
+                    );
+                }
+            };
+
+        let timestamp =
+            self.event_timestamp(event)?;
 
         word.exposure_count =
             word.exposure_count
                 .saturating_add(1);
 
         //
-        // Само появление слова на экране
-        // немного улучшает recognition.
+        // first_seen_at действительно является
+        // первым временем наблюдения.
         //
 
-        word.recognition +=
-            0.015
-            * (1.0 - word.recognition);
-
-        word.recognition =
-            word.recognition.clamp(
-                0.0,
-                1.0,
-            );
-
         if word.first_seen_at.is_none() {
-            word.first_seen_at = Some(
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?,
-            );
+            word.first_seen_at =
+                Some(timestamp);
         }
 
-        word.first_seen_at = Some(
-            Utc.timestamp_opt(event.timestamp as i64, 0)
-                .single()
-                .ok_or_else(|| {
-                    LearningError::Repository(
-                        RepositoryError::InvalidInput(
-                            "Failed parse event timestamp".to_string(),
-                        ),
-                    )
-                })?,
-        );
+        word.last_seen_at =
+            Some(timestamp);
 
         self.update_word_familiarity(
             &mut word,
@@ -297,6 +550,12 @@ impl LearningEngine {
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // TRANSLATION OPENED
+    // --------------------------------------------------------
+    //
 
     fn handle_translation_opened(
         &self,
@@ -314,14 +573,17 @@ impl LearningEngine {
                 word_id,
             )?;
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         //
-        // Открытие перевода — очень слабый
-        // сигнал знания.
+        // Открытие перевода = пользователь
+        // сознательно обратил внимание на слово.
         //
 
         word.recognition +=
             0.005
-            * (1.0 - word.recognition);
+                * (1.0 - word.recognition);
 
         word.recognition =
             word.recognition.clamp(
@@ -331,31 +593,29 @@ impl LearningEngine {
 
         if word.first_seen_at.is_none() {
             word.first_seen_at =
-                Some(
-                    Utc.timestamp_opt(event.timestamp as i64, 0)
-                        .single()
-                        .ok_or_else(|| {
-                            LearningError::Repository(
-                                RepositoryError::InvalidInput(
-                                    "Failed parse event timestamp".to_string(),
-                                ),
-                            )
-                        })?,
-                );
+                Some(timestamp);
         }
 
         word.last_seen_at =
-            Some(
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?,
-            );
+            Some(timestamp);
+
+        //
+        // Первичное добавление слова
+        // ставим в очередь не сразу,
+        // а с небольшим delay.
+        //
+
+        if word.repetitions == 0
+            && word.next_review_at.is_none()
+        {
+            word.next_review_at =
+                Some(
+                    timestamp
+                        + Duration::minutes(
+                            INITIAL_REVIEW_DELAY_MINUTES
+                        ),
+                );
+        }
 
         self.update_word_familiarity(
             &mut word,
@@ -372,6 +632,12 @@ impl LearningEngine {
         Ok(())
     }
 
+    //
+    // --------------------------------------------------------
+    // FAVORITE
+    // --------------------------------------------------------
+    //
+
     fn handle_favorite(
         &self,
         event: &LearningEvent,
@@ -383,11 +649,60 @@ impl LearningEngine {
             return Ok(());
         };
 
+        //
+        // Добавление в избранное = внимание.
+        //
+        // Удаление из избранного само по себе
+        // не должно создавать UserWord.
+        //
+
         let mut word =
-            self.get_or_create_word(
-                &event.user_id,
-                word_id,
-            )?;
+            if favorite {
+                self.get_or_create_word(
+                    &event.user_id,
+                    word_id,
+                )?
+            } else {
+                match self.word_repository.find(
+                    &event.user_id,
+                    word_id,
+                ) {
+                    Ok(word) => word,
+
+                    Err(RepositoryError::NotFound) => {
+                        return Ok(());
+                    }
+
+                    Err(error) => {
+                        return Err(
+                            LearningError::Repository(
+                                error
+                            )
+                        );
+                    }
+                }
+            };
+
+        let timestamp =
+            self.event_timestamp(event)?;
+
+        if word.first_seen_at.is_none() {
+            word.first_seen_at =
+                Some(timestamp);
+        }
+
+        if favorite
+            && word.repetitions == 0
+            && word.next_review_at.is_none()
+        {
+            word.next_review_at =
+                Some(
+                    timestamp
+                        + Duration::minutes(
+                            INITIAL_REVIEW_DELAY_MINUTES
+                        ),
+                );
+        }
 
         word.favorite = favorite;
 
@@ -397,6 +712,12 @@ impl LearningEngine {
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // MARKED KNOWN
+    // --------------------------------------------------------
+    //
 
     fn handle_marked_known(
         &self,
@@ -414,10 +735,8 @@ impl LearningEngine {
                 word_id,
             )?;
 
-        //
-        // Ручная отметка пользователя —
-        // сильный, но не абсолютный сигнал.
-        //
+        let timestamp =
+            self.event_timestamp(event)?;
 
         word.recognition =
             word.recognition.max(0.80);
@@ -431,18 +750,15 @@ impl LearningEngine {
         word.repetitions =
             word.repetitions.max(1);
 
+        word.first_seen_at =
+            word.first_seen_at
+                .or(Some(timestamp));
+
+        word.last_seen_at =
+            Some(timestamp);
+
         word.last_reviewed_at =
-            Some(
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?,
-            );
+            Some(timestamp);
 
         self.update_word_familiarity(
             &mut word,
@@ -454,15 +770,7 @@ impl LearningEngine {
 
         self.schedule_after_manual_known(
             &mut word,
-            Utc.timestamp_opt(event.timestamp as i64, 0)
-                .single()
-                .ok_or_else(|| {
-                    LearningError::Repository(
-                        RepositoryError::InvalidInput(
-                            "Failed parse event timestamp".to_string(),
-                        ),
-                    )
-                })?,
+            timestamp,
         );
 
         self.word_repository.upsert(
@@ -471,6 +779,12 @@ impl LearningEngine {
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // MARKED UNKNOWN
+    // --------------------------------------------------------
+    //
 
     fn handle_marked_unknown(
         &self,
@@ -488,6 +802,9 @@ impl LearningEngine {
                 word_id,
             )?;
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         word.recognition *= 0.70;
 
         word.recall *= 0.55;
@@ -497,18 +814,19 @@ impl LearningEngine {
         word.state =
             WordState::Learning;
 
+        word.first_seen_at =
+            word.first_seen_at
+                .or(Some(timestamp));
+
+        word.last_seen_at =
+            Some(timestamp);
+
+        //
+        // Unknown = нужно повторить.
+        //
+
         word.next_review_at =
-            Some(
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?,
-            );
+            Some(timestamp);
 
         self.update_word_familiarity(
             &mut word,
@@ -521,9 +839,11 @@ impl LearningEngine {
         Ok(())
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // QUESTIONS
-    // ============================================================
+    // ========================================================
+    //
 
     fn handle_question_answered(
         &self,
@@ -532,9 +852,10 @@ impl LearningEngine {
         let LearningEventData::QuestionAnswered {
             correct,
             response_time_ms,
+            selected_answer: _,
+            correct_answer: _,
             word_ids,
             skill_ids,
-            ..
         } = &event.data
         else {
             return Err(
@@ -545,9 +866,12 @@ impl LearningEngine {
             );
         };
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         //
-        // Обновляем каждое слово,
-        // которое проверял этот вопрос.
+        // Каждое слово обновляется
+        // как отдельная единица знаний.
         //
 
         for word_id in word_ids {
@@ -556,21 +880,12 @@ impl LearningEngine {
                 word_id,
                 *correct,
                 *response_time_ms,
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?
+                timestamp,
             )?;
         }
 
         //
-        // Обновляем навыки,
-        // которые проверял вопрос.
+        // Skills.
         //
 
         for skill_id in skill_ids {
@@ -579,21 +894,12 @@ impl LearningEngine {
                 skill_id,
                 *correct,
                 0.5,
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?,
+                timestamp,
             )?;
         }
 
         //
-        // Если skill пришёл только
-        // в context, тоже учитываем.
+        // Если skill пришёл только в context.
         //
 
         if skill_ids.is_empty() {
@@ -605,21 +911,19 @@ impl LearningEngine {
                     skill_id,
                     *correct,
                     0.5,
-                    Utc.timestamp_opt(event.timestamp as i64, 0)
-                        .single()
-                        .ok_or_else(|| {
-                            LearningError::Repository(
-                                RepositoryError::InvalidInput(
-                                    "Failed parse event timestamp".to_string(),
-                                ),
-                            )
-                        })?,
+                    timestamp,
                 )?;
             }
         }
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // APPLY WORD ANSWER
+    // --------------------------------------------------------
+    //
 
     fn apply_word_answer(
         &self,
@@ -635,25 +939,40 @@ impl LearningEngine {
                 word_id,
             )?;
 
+        //
+        // Это первое осознанное взаимодействие
+        // с этим словом.
+        //
+
+        if word.first_seen_at.is_none() {
+            word.first_seen_at =
+                Some(timestamp);
+        }
+
+        word.last_seen_at =
+            Some(timestamp);
+
         if correct {
             //
-            // Правильный ответ —
-            // сильный сигнал recall.
+            // Recall.
             //
 
             word.recall +=
                 0.15
-                * (1.0 - word.recall);
+                    * (1.0 - word.recall);
+
+            //
+            // Recognition.
+            //
 
             word.recognition +=
                 0.08
-                * (1.0 - word.recognition);
+                    * (1.0 - word.recognition);
 
             word.repetitions += 1;
 
             //
-            // Быстрый правильный ответ
-            // говорит о более устойчивом знании.
+            // Быстрый правильный ответ.
             //
 
             if let Some(time) =
@@ -662,13 +981,12 @@ impl LearningEngine {
                 if time < 2_500 {
                     word.recall +=
                         0.04
-                        * (1.0 - word.recall);
+                            * (1.0 - word.recall);
                 }
             }
         } else {
             //
-            // Ошибка — сильный отрицательный
-            // сигнал для recall.
+            // Ошибка.
             //
 
             word.recall *= 0.65;
@@ -720,9 +1038,11 @@ impl LearningEngine {
         Ok(())
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // SKILLS
-    // ============================================================
+    // ========================================================
+    //
 
     fn apply_skill_answer(
         &self,
@@ -761,14 +1081,6 @@ impl LearningEngine {
             skill.correct += 1;
         }
 
-        //
-        // Exponential moving average.
-        //
-        // Первые ответы имеют больший вес,
-        // после накопления истории изменения
-        // становятся плавнее.
-        //
-
         let alpha =
             if skill.attempts <= 5 {
                 0.25
@@ -780,26 +1092,20 @@ impl LearningEngine {
             if correct {
                 1.0
                     - difficulty
-                    * 0.25
+                        * 0.25
             } else {
-                difficulty
-                    * 0.20
+                difficulty * 0.20
             };
 
         skill.mastery +=
             (target - skill.mastery)
-            * alpha;
+                * alpha;
 
         skill.mastery =
             skill.mastery.clamp(
                 0.0,
                 1.0,
             );
-
-        //
-        // Чем больше наблюдений,
-        // тем выше confidence.
-        //
 
         skill.confidence =
             (skill.attempts as f64
@@ -817,9 +1123,11 @@ impl LearningEngine {
         Ok(())
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // EXERCISES
-    // ============================================================
+    // ========================================================
+    //
 
     fn handle_exercise_completed(
         &self,
@@ -828,9 +1136,9 @@ impl LearningEngine {
         let LearningEventData::ExerciseCompleted {
             correct,
             total,
-            skill_ids,
-            word_ids,
             duration_ms: _,
+            skill_ids,
+            word_ids: _,
         } = &event.data
         else {
             return Err(
@@ -844,7 +1152,8 @@ impl LearningEngine {
         if *total == 0 {
             return Err(
                 LearningError::InvalidEvent(
-                    "exercise total is zero".into(),
+                    "exercise total is zero"
+                        .into(),
                 ),
             );
         }
@@ -853,56 +1162,33 @@ impl LearningEngine {
             *correct as f64
                 / *total as f64;
 
-        //
-        // Упражнение может проверять
-        // несколько skills.
-        //
+        let timestamp =
+            self.event_timestamp(event)?;
 
+        //
+        // Очень важно:
+        //
+        // ExerciseCompleted НЕ обновляет UserWord.
+        //
+        // Слова обновляются в QuestionAnswered.
+        //
         for skill_id in skill_ids {
             self.apply_skill_exercise_result(
                 &event.user_id,
                 skill_id,
                 accuracy,
-                    Utc.timestamp_opt(event.timestamp as i64, 0)
-                        .single()
-                        .ok_or_else(|| {
-                            LearningError::Repository(
-                                RepositoryError::InvalidInput(
-                                    "Failed parse event timestamp".to_string(),
-                                ),
-                            )
-                        })?
-            )?;
-        }
-
-        //
-        // Если упражнение связано со словами,
-        // тоже учитываем результат.
-        //
-
-        for word_id in word_ids {
-            let correct_answer =
-                accuracy >= 0.5;
-
-            self.apply_word_answer(
-                &event.user_id,
-                word_id,
-                correct_answer,
-                None,
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?,
+                timestamp,
             )?;
         }
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // EXERCISE -> SKILL
+    // --------------------------------------------------------
+    //
 
     fn apply_skill_exercise_result(
         &self,
@@ -947,10 +1233,9 @@ impl LearningEngine {
             if accuracy >= 0.5 {
                 1.0
                     - difficulty
-                    * 0.25
+                        * 0.25
             } else {
-                difficulty
-                    * 0.20
+                difficulty * 0.20
             };
 
         let alpha =
@@ -962,7 +1247,7 @@ impl LearningEngine {
 
         skill.mastery +=
             (target - skill.mastery)
-            * alpha;
+                * alpha;
 
         skill.mastery =
             skill.mastery.clamp(
@@ -986,9 +1271,11 @@ impl LearningEngine {
         Ok(())
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // BOOK
-    // ============================================================
+    // ========================================================
+    //
 
     fn handle_chapter_opened(
         &self,
@@ -1006,31 +1293,29 @@ impl LearningEngine {
                 book_id,
             )?;
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         progress.chapters_started += 1;
 
         progress.last_chapter_id =
-            event.context
-                .chapter_id
-                .clone();
+            event.context.chapter_id.clone();
 
         progress.updated_at =
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?;
+            timestamp;
 
-        self.book_progress_repository
-            .upsert(
-                &progress
-            )?;
+        self.book_progress_repository.upsert(
+            &progress,
+        )?;
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // CHAPTER COMPLETED
+    // --------------------------------------------------------
+    //
 
     fn handle_chapter_completed(
         &self,
@@ -1048,31 +1333,29 @@ impl LearningEngine {
                 book_id,
             )?;
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         progress.chapters_completed += 1;
 
         progress.last_chapter_id =
-            event.context
-                .chapter_id
-                .clone();
+            event.context.chapter_id.clone();
 
         progress.updated_at =
-                Utc.timestamp_opt(event.timestamp as i64, 0)
-                    .single()
-                    .ok_or_else(|| {
-                        LearningError::Repository(
-                            RepositoryError::InvalidInput(
-                                "Failed parse event timestamp".to_string(),
-                            ),
-                        )
-                    })?;
+            timestamp;
 
-        self.book_progress_repository
-            .upsert(
-                &progress
-            )?;
+        self.book_progress_repository.upsert(
+            &progress,
+        )?;
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // PARAGRAPH SEEN
+    // --------------------------------------------------------
+    //
 
     fn handle_paragraph_seen(
         &self,
@@ -1090,31 +1373,29 @@ impl LearningEngine {
                 book_id,
             )?;
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         progress.paragraphs_seen += 1;
 
         progress.last_element_id =
-            event.context
-                .element_id
-                .clone();
+            event.context.element_id.clone();
 
         progress.updated_at =
-            Utc.timestamp_opt(event.timestamp as i64, 0)
-                .single()
-                .ok_or_else(|| {
-                    LearningError::Repository(
-                        RepositoryError::InvalidInput(
-                            "Failed parse event timestamp".to_string(),
-                        ),
-                    )
-                })?;
+            timestamp;
 
-        self.book_progress_repository
-            .upsert(
-                &progress
-            )?;
+        self.book_progress_repository.upsert(
+            &progress,
+        )?;
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // READING SESSION
+    // --------------------------------------------------------
+    //
 
     fn handle_reading_session(
         &self,
@@ -1122,7 +1403,7 @@ impl LearningEngine {
     ) -> Result<(), LearningError> {
         let LearningEventData::ReadingSession {
             seconds,
-            paragraphs_seen,
+            paragraphs_seen: _,
         } = &event.data
         else {
             return Err(
@@ -1145,30 +1426,34 @@ impl LearningEngine {
                 book_id,
             )?;
 
+        let timestamp =
+            self.event_timestamp(event)?;
+
         progress.reading_seconds +=
             *seconds as i64;
 
-        progress.paragraphs_seen +=
-            *paragraphs_seen as i64;
+        //
+        // paragraphs_seen здесь специально
+        // НЕ увеличиваем.
+        //
+        // ParagraphSeen уже сделал это.
+        //
 
         progress.updated_at =
-            Utc.timestamp_opt(event.timestamp as i64, 0)
-                .single()
-                .ok_or_else(|| {
-                    LearningError::Repository(
-                        RepositoryError::InvalidInput(
-                            "Failed parse event timestamp".to_string(),
-                        ),
-                    )
-                })?;
+            timestamp;
 
-        self.book_progress_repository
-            .upsert(
-                &progress
-            )?;
+        self.book_progress_repository.upsert(
+            &progress,
+        )?;
 
         Ok(())
     }
+
+    //
+    // --------------------------------------------------------
+    // GET BOOK PROGRESS
+    // --------------------------------------------------------
+    //
 
     fn get_or_create_book_progress(
         &self,
@@ -1178,15 +1463,11 @@ impl LearningEngine {
         BookReadingProgress,
         LearningError,
     > {
-        match self.book_progress_repository
-            .find(
-                user_id,
-                book_id,
-            )
-        {
-            Ok(progress) => {
-                Ok(progress)
-            }
+        match self.book_progress_repository.find(
+            user_id,
+            book_id,
+        ) {
+            Ok(progress) => Ok(progress),
 
             Err(RepositoryError::NotFound) => {
                 Ok(
@@ -1207,9 +1488,11 @@ impl LearningEngine {
         }
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // WORD KNOWLEDGE
-    // ============================================================
+    // ========================================================
+    //
 
     fn update_word_familiarity(
         &self,
@@ -1226,10 +1509,8 @@ impl LearningEngine {
             (
                 word.recognition
                     * 0.35
-
                 + word.recall
                     * 0.45
-
                 + exposure
                     * 0.20
             )
@@ -1279,9 +1560,11 @@ impl LearningEngine {
             WordState::New;
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // SPACED REPETITION
-    // ============================================================
+    // ========================================================
+    //
 
     fn apply_review_schedule(
         &self,
@@ -1313,7 +1596,7 @@ impl LearningEngine {
                         timestamp
                             + days(
                                 word.stability_days
-                            )
+                            ),
                     );
             }
 
@@ -1340,7 +1623,7 @@ impl LearningEngine {
                         timestamp
                             + days(
                                 word.stability_days
-                            )
+                            ),
                     );
             }
 
@@ -1375,7 +1658,7 @@ impl LearningEngine {
                         timestamp
                             + days(
                                 word.stability_days
-                            )
+                            ),
                     );
             }
 
@@ -1409,7 +1692,7 @@ impl LearningEngine {
                         timestamp
                             + days(
                                 word.stability_days
-                            )
+                            ),
                     );
             }
         }
@@ -1423,13 +1706,15 @@ impl LearningEngine {
         word.next_review_at =
             Some(
                 timestamp
-                    + Duration::days(1)
+                    + Duration::days(1),
             );
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // LEVEL
-    // ============================================================
+    // ========================================================
+    //
 
     fn recalculate_user_level(
         &self,
@@ -1470,17 +1755,10 @@ impl LearningEngine {
             );
 
         let overall =
-            vocabulary
-                * 0.40
-
-            + grammar
-                * 0.20
-
-            + comprehension
-                * 0.25
-
-            + reading
-                * 0.15;
+            vocabulary * 0.40
+            + grammar * 0.20
+            + comprehension * 0.25
+            + reading * 0.15;
 
         let confidence =
             calculate_level_confidence(
@@ -1509,60 +1787,178 @@ impl LearningEngine {
                     Utc::now(),
             };
 
-        self.level_repository
-            .upsert(
-                &level
-            )?;
+        self.level_repository.upsert(
+            &level,
+        )?;
 
         Ok(())
     }
 
-    // ============================================================
+    //
+    // ========================================================
     // NEXT ACTIVITY
-    // ============================================================
+    // ========================================================
+    //
 
     pub fn next_activity(
         &self,
         user_id: &str,
+        config: &LearningConfig,
     ) -> Result<
         LearningActivity,
         LearningError,
     > {
-        let due =
-            self.word_repository
-                .find_due(user_id)?;
+        //
+        // Lock scheduler so two simultaneous
+        // calls cannot create two activities.
+        //
 
-        if !due.is_empty() {
-            let mut due = due;
-
-            due.sort_by(|a, b| {
-                word_priority(b)
-                    .partial_cmp(
-                        &word_priority(a)
+        let mut scheduler =
+            self.scheduler.lock()
+                .map_err(|_| {
+                    LearningError::InvalidEvent(
+                        "scheduler lock poisoned"
+                            .into(),
                     )
-                    .unwrap_or(
-                        std::cmp::Ordering::Equal
-                    )
-            });
+                })?;
 
+        //
+        // ----------------------------------------------------
+        // COOLDOWN
+        // ----------------------------------------------------
+        //
+
+        if !config.enabled || !config.exercises.enabled || scheduler.activities_this_session >= config.exercises.max_per_session.max(1) as usize || scheduler
+            .paragraphs_since_activity
+            < MIN_PARAGRAPHS_BETWEEN_ACTIVITIES
+        {
+            return self.continue_reading(
+                user_id,
+            );
+        }
+
+        //
+        // ----------------------------------------------------
+        // CANDIDATES
+        // ----------------------------------------------------
+        //
+
+        let mut candidates:
+            Vec<ActivityCandidate> =
+            Vec::new();
+
+        //
+        // ----------------------------------------------------
+        // DUE WORDS
+        // ----------------------------------------------------
+        //
+
+        let mut due = if config.review.enabled {
+            self.word_repository.find_due(user_id)?
+        } else {
+            Vec::new()
+        };
+
+        //
+        // Дополнительная защита:
+        //
+        // scheduler не должен использовать
+        // Mastered / Suspended.
+        //
+
+        due.retain(|word| {
+            matches!(
+                word.state,
+                WordState::Learning
+                    | WordState::Review
+            )
+        });
+
+        due.sort_by(|a, b| {
+            word_priority(b)
+                .partial_cmp(
+                    &word_priority(a),
+                )
+                .unwrap_or(
+                    std::cmp::Ordering::Equal
+                )
+        });
+
+        //
+        // WordReview candidate.
+        //
+
+        if config.review.enabled && !due.is_empty() {
             let word_ids =
                 due.iter()
-                    .take(8)
+                    .take(config.exercises.words_per_exercise.max(1) as usize)
                     .map(|word| {
                         word.word_id.clone()
                     })
-                    .collect();
+                    .collect::<Vec<_>>();
 
-            return Ok(
-                LearningActivity::WordReview {
-                    word_ids,
+            let review = LearningActivity::WordReview {
+                word_ids,
+                reason:
+                    "Есть слова, которые пора повторить."
+                        .into(),
+            };
 
-                    reason:
-                        "Есть слова, которые пора повторить."
-                            .into(),
-                }
+            candidates.push(
+                ActivityCandidate {
+                    kind:
+                        ActivityKind::WordReview,
+
+                    base_score:
+                        100.0,
+                    
+                    score: 
+                        100.0,
+
+                    activity:
+                        review,
+                },
             );
+
+            //
+            // Translation candidate.
+            //
+            // Позволяет менять тип упражнения
+            // даже когда due-слов много.
+            //
+
+            if config.exercises.translation {
+            if let Some(word) = due.first() {
+                candidates.push(
+                    ActivityCandidate {
+                        kind:
+                            ActivityKind::Translation,
+
+                        base_score:
+                            65.0,
+
+                        score:
+                            65.0,
+
+                        activity:
+                            LearningActivity::Translation {
+                                word_id:
+                                    word.word_id.clone(),
+
+                                reason:
+                                    "Полезно вспомнить значение одного слова."
+                                        .into(),
+                            },
+                    },
+                );
+            }
         }
+
+        //
+        // ----------------------------------------------------
+        // WEAK SKILL
+        // ----------------------------------------------------
+        //
 
         let skills =
             self.skill_repository
@@ -1577,28 +1973,189 @@ impl LearningEngine {
                 .min_by(|a, b| {
                     a.mastery
                         .partial_cmp(
-                            &b.mastery
+                            &b.mastery,
                         )
                         .unwrap_or(
                             std::cmp::Ordering::Equal
                         )
                 });
 
-        if let Some(skill) =
-            weakest
-        {
-            return Ok(
-                LearningActivity::SkillExercise {
-                    skill_id:
-                        skill.skill_id.clone(),
+        if config.exercises.enabled {
+        if let Some(skill) = weakest {
+            candidates.push(
+                ActivityCandidate {
+                    kind:
+                        ActivityKind::SkillExercise,
 
-                    reason:
-                        "Это один из наиболее слабых навыков."
-                            .into(),
-                }
+                    base_score:
+                        70.0
+                            + (
+                                1.0
+                                    - skill.mastery
+                            )
+                            * 30.0,
+
+                    score:
+                        70.0
+                            + (
+                                1.0
+                                    - skill.mastery
+                            )
+                            * 30.0,
+
+                    activity:
+                        LearningActivity::SkillExercise {
+                            skill_id:
+                                skill.skill_id.clone(),
+
+                            reason:
+                                "Это один из слабых навыков."
+                                    .into(),
+                        },
+                },
+            );
+        }
+        }
+
+        //
+        // ----------------------------------------------------
+        // COMPREHENSION
+        // ----------------------------------------------------
+        //
+
+        let books =
+            self.book_progress_repository
+                .find_by_user(user_id)?;
+
+        if config.exercises.comprehension {
+        if let Some(book) = books.first() {
+            if let Some(chapter_id) =
+                &book.last_chapter_id
+            {
+                candidates.push(
+                    ActivityCandidate {
+                        kind:
+                            ActivityKind::ComprehensionExercise,
+
+                        base_score:
+                            55.0,
+
+                        score:
+                            55.0,
+
+                        activity:
+                            LearningActivity::ComprehensionExercise {
+                                book_id:
+                                    book.book_id.clone(),
+
+                                chapter_id:
+                                    chapter_id.clone(),
+
+                                reason:
+                                    "Пора проверить понимание прочитанного."
+                                        .into(),
+                            },
+                    },
+                );
+            }
+            }
+        }
+        }
+
+        //
+        // ----------------------------------------------------
+        // NOTHING
+        // ----------------------------------------------------
+        //
+
+        if candidates.is_empty() {
+            return self.continue_reading(
+                user_id,
             );
         }
 
+        //
+        // ----------------------------------------------------
+        // DIVERSITY
+        // ----------------------------------------------------
+        //
+
+        for candidate in &mut candidates {
+            let multiplier = if config.adaptive_learning {
+                diversity_multiplier(
+                    candidate.kind,
+                    &scheduler
+                        .recent_activities,
+                )
+            } else { 1.0 };
+
+            candidate.score =
+                candidate.base_score
+                    * multiplier;
+        }
+
+        //
+        // Highest score wins.
+        //
+
+        let selected =
+            candidates
+                .into_iter()
+                .max_by(|a, b| {
+                    a.score
+                        .partial_cmp(
+                            &b.score,
+                        )
+                        .unwrap_or(
+                            std::cmp::Ordering::Equal
+                        )
+                })
+                .expect(
+                    "candidates is not empty"
+                );
+
+        //
+        // ----------------------------------------------------
+        // UPDATE SCHEDULER
+        // ----------------------------------------------------
+        //
+
+        scheduler.paragraphs_since_activity =
+            0;
+        scheduler.activities_this_session = scheduler.activities_this_session.saturating_add(1);
+
+        scheduler
+            .recent_activities
+            .push_front(
+                selected.kind
+            );
+
+        while scheduler
+            .recent_activities
+            .len()
+            > RECENT_ACTIVITY_LIMIT
+        {
+            scheduler
+                .recent_activities
+                .pop_back();
+        }
+
+        Ok(selected.activity)
+    }
+
+    //
+    // --------------------------------------------------------
+    // CONTINUE READING
+    // --------------------------------------------------------
+    //
+
+    fn continue_reading(
+        &self,
+        user_id: &str,
+    ) -> Result<
+        LearningActivity,
+        LearningError,
+    > {
         let books =
             self.book_progress_repository
                 .find_by_user(user_id)?;
@@ -1606,20 +2163,18 @@ impl LearningEngine {
         if let Some(book) =
             books.first()
         {
-            let chapter_id =
-                book.last_chapter_id
-                    .clone()
-                    .unwrap_or_default();
-
             return Ok(
                 LearningActivity::ContinueReading {
                     book_id:
                         book.book_id.clone(),
 
-                    chapter_id,
+                    chapter_id:
+                        book.last_chapter_id
+                            .clone()
+                            .unwrap_or_default(),
 
                     reason:
-                        "Нет срочных повторений, можно продолжить чтение."
+                        "Пользователь продолжает чтение."
                             .into(),
                 }
             );
@@ -1628,15 +2183,122 @@ impl LearningEngine {
         Ok(
             LearningActivity::Rest {
                 reason:
-                    "Недостаточно данных для персонализации."
+                    "Недостаточно данных для следующей активности."
                         .into(),
             }
         )
     }
+
+    //
+    // ========================================================
+    // TIMESTAMP
+    // ========================================================
+    //
+
+    fn event_timestamp(
+        &self,
+        event: &LearningEvent,
+    ) -> Result<
+        DateTime<Utc>,
+        LearningError,
+    > {
+        //
+        // Frontend использует:
+        //
+        // Date.now()
+        //
+        // поэтому timestamp находится
+        // в миллисекундах.
+        //
+
+        DateTime::<Utc>::from_timestamp_millis(
+            event.timestamp as i64,
+        )
+        .ok_or_else(|| {
+            LearningError::Repository(
+                RepositoryError::InvalidInput(
+                    "Failed parse event timestamp"
+                        .to_string(),
+                ),
+            )
+        })
+    }
 }
 
 //
-// HELPERS
+// ============================================================
+// ACTIVITY CANDIDATE
+// ============================================================
+//
+
+struct ActivityCandidate {
+    kind: ActivityKind,
+
+    base_score: f64,
+
+    score: f64,
+
+    activity: LearningActivity,
+}
+
+//
+// ============================================================
+// DIVERSITY
+// ============================================================
+//
+
+fn diversity_multiplier(
+    kind: ActivityKind,
+    recent: &VecDeque<ActivityKind>,
+) -> f64 {
+    //
+    // Последняя activity того же типа.
+    //
+
+    if recent
+        .front()
+        .is_some_and(|recent_kind| {
+            *recent_kind == kind
+        })
+    {
+        return 0.20;
+    }
+
+    //
+    // Эта activity была среди двух последних.
+    //
+
+    if recent
+        .iter()
+        .take(2)
+        .any(|recent_kind| {
+            *recent_kind == kind
+        })
+    {
+        return 0.55;
+    }
+
+    //
+    // Тип давно не использовался.
+    //
+
+    if !recent
+        .iter()
+        .take(RECENT_ACTIVITY_LIMIT)
+        .any(|recent_kind| {
+            *recent_kind == kind
+        })
+    {
+        return 1.15;
+    }
+
+    1.0
+}
+
+//
+// ============================================================
+// REVIEW RATING
+// ============================================================
 //
 
 #[derive(
@@ -1674,13 +2336,27 @@ fn review_rating(
     }
 }
 
+//
+// ============================================================
+// TIME
+// ============================================================
+//
+
 fn days(days: f64) -> Duration {
     Duration::seconds(
-        (days * 86_400.0)
-            .max(1.0)
-            as i64,
+        (
+            days * 86_400.0
+        )
+        .max(1.0)
+        as i64,
     )
 }
+
+//
+// ============================================================
+// WORD PRIORITY
+// ============================================================
+//
 
 fn word_priority(
     word: &UserWord,
@@ -1691,14 +2367,16 @@ fn word_priority(
     let overdue_days =
         match word.next_review_at {
             Some(next) => {
-                (now - next)
-                    .num_seconds()
-                    .max(0)
-                    as f64
+                (
+                    now - next
+                )
+                .num_seconds()
+                .max(0)
+                as f64
                     / 86_400.0
             }
 
-            None => 30.0,
+            None => 0.0,
         };
 
     let weakness =
@@ -1712,15 +2390,16 @@ fn word_priority(
             0.0
         };
 
-    overdue_days
-        * 0.6
-
-        + weakness
-            * 0.3
-
-        + favorite_bonus
-            * 0.1
+    overdue_days * 0.6
+        + weakness * 0.3
+        + favorite_bonus * 0.1
 }
+
+//
+// ============================================================
+// LEVEL HELPERS
+// ============================================================
+//
 
 fn calculate_vocabulary_score(
     words: &[UserWord],
@@ -1860,11 +2539,8 @@ fn calculate_level_confidence(
         };
 
     (
-        word_confidence
-            * 0.6
-
-        + skill_confidence
-            * 0.4
+        word_confidence * 0.6
+            + skill_confidence * 0.4
     )
     .clamp(
         0.0,

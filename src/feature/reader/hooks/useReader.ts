@@ -1,5 +1,5 @@
 import { Chapter } from "@/entities/book/book.type";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildDocument, ContentElement } from "../lib/paragraph";
 
 export type NavigationResult =
@@ -23,129 +23,192 @@ export type VisibleElement = {
   elementIndex: number;
 };
 
+type Activity = {
+  id: string;
+  chapterIndex: number;
+  elementIndex: number;
+  element: ContentElement;
+};
+
+export type RestoredReaderActivity = {
+  id: string;
+  chapterIndex: number;
+  anchorIndex: number;
+  element: ContentElement;
+};
+
 export const useReader = (chapters: Chapter[]) => {
   const [chapterIndex, setChapterIndex] = useState(0);
   const [elementIndex, setElementIndex] = useState(0);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const pendingRestoreRef = useRef<{ chapterIndex: number; elementIndex: number } | null>(null);
+  const [restoreRevision, setRestoreRevision] = useState(0);
 
-  /**
-   * Индекс текущей главы.
-   */
   const currentChapter = chapters[chapterIndex];
 
   /**
-   * Элементы всех глав.
+   * Исходные элементы глав.
+   * Упражнения сюда не добавляются.
+   */
+  const baseChapterElements = useMemo(
+    () =>
+      chapters.map(
+        (chapter) => buildDocument(chapter.html).elements,
+      ),
+    [chapters],
+  );
+
+  /**
+   * Собираем отображаемые элементы.
    *
-   * Это вычисляемое значение, поэтому никакого дополнительного
-   * состояния для них не требуется.
+   * elementIndex в Activity — позиция в исходной главе,
+   * перед которой необходимо показать упражнение.
    */
   const chapterElements = useMemo(() => {
-    return chapters.map((chapter) => buildDocument(chapter.html).elements);
-  }, [chapters]);
+    return baseChapterElements.map((baseElements, cIndex) => {
+      const chapterActivities = activities
+        .filter((activity) => activity.chapterIndex === cIndex)
+        .sort((a, b) => a.elementIndex - b.elementIndex);
+      const activitiesByPosition = new Map<number, ContentElement[]>();
+      for (const activity of chapterActivities) {
+        const atPosition = activitiesByPosition.get(activity.elementIndex) ?? [];
+        atPosition.push(activity.element);
+        activitiesByPosition.set(activity.elementIndex, atPosition);
+      }
 
-  /**
-   * Элементы текущей главы.
-   */
+      const result: ContentElement[] = [];
+
+      for (let i = 0; i <= baseElements.length; i++) {
+        result.push(...(activitiesByPosition.get(i) ?? []));
+
+        if (i < baseElements.length) {
+          result.push(baseElements[i]);
+        }
+      }
+
+      return result;
+    });
+  }, [baseChapterElements, activities]);
+
+  useEffect(() => {
+    const pending = pendingRestoreRef.current;
+    if (!pending) return;
+    const targetElements = chapterElements[pending.chapterIndex] ?? [];
+    setElementIndex(Math.max(0, Math.min(pending.elementIndex, Math.max(0, targetElements.length - 1))));
+    pendingRestoreRef.current = null;
+  }, [chapterElements, restoreRevision]);
+
   const elements = chapterElements[chapterIndex] ?? [];
 
-  /**
-   * Текущий элемент.
-   */
   const currentElement = elements[elementIndex];
 
-  /**
-   * Предыдущая глава.
-   */
   const previousChapter =
-    chapterIndex > 0
-      ? chapters[chapterIndex - 1]
-      : undefined;
+    chapterIndex > 0 ? chapters[chapterIndex - 1] : undefined;
 
-  /**
-   * Элементы предыдущей главы.
-   */
   const previousElements =
-    chapterIndex > 0
-      ? chapterElements[chapterIndex - 1] ?? []
-      : [];
+    chapterIndex > 0 ? chapterElements[chapterIndex - 1] ?? [] : [];
 
-  /**
-   * Все элементы текущей главы, которые уже были пройдены.
-   *
-   * Текущий элемент тоже считается пройденным.
-   */
-  const currentElements = useMemo(() => {
-    return elements.slice(0, elementIndex + 1);
-  }, [elements, elementIndex]);
+  const currentElements = useMemo(
+    () => elements.slice(0, elementIndex + 1),
+    [elements, elementIndex],
+  );
 
-  /**
-   * Все элементы из предыдущих глав.
-   *
-   * Они полностью пройдены, потому что пользователь уже
-   * перешёл в текущую главу.
-   */
-  const completedPreviousElements = useMemo(() => {
-    return chapterElements
-      .slice(0, chapterIndex)
-      .flatMap((chapterElements, previousChapterIndex) =>
-        chapterElements.map((element, previousElementIndex) => ({
-          element,
-          chapterIndex: previousChapterIndex,
-          elementIndex: previousElementIndex,
-        })),
-      );
-  }, [chapterElements, chapterIndex]);
+  const completedPreviousElements = useMemo(
+    () =>
+      chapterElements
+        .slice(0, chapterIndex)
+        .flatMap((chapter, previousChapterIndex) =>
+          chapter.map((element, previousElementIndex) => ({
+            element,
+            chapterIndex: previousChapterIndex,
+            elementIndex: previousElementIndex,
+          })),
+        ),
+    [chapterElements, chapterIndex],
+  );
 
-  /**
-   * Все элементы, которые пользователь уже прошёл.
-   *
-   * Например:
-   *
-   * Глава 0:
-   *   [0, 1, 2, 3]
-   *
-   * Глава 1:
-   *   [0, 1, 2]
-   *
-   * Текущий элемент = 2
-   *
-   * Результат:
-   *   глава 0 -> 0, 1, 2, 3
-   *   глава 1 -> 0, 1, 2
-   */
-  const completedElements = useMemo(() => {
-    return [
+  const completedElements = useMemo(
+    () => [
       ...completedPreviousElements,
       ...currentElements.map((element, index) => ({
         element,
         chapterIndex,
         elementIndex: index,
       })),
-    ];
-  }, [
-    completedPreviousElements,
-    currentElements,
-    chapterIndex,
-  ]);
+    ],
+    [completedPreviousElements, currentElements, chapterIndex],
+  );
 
-  /**
-   * Последний элемент предыдущей главы.
-   */
   const previousElement =
     previousElements.length > 0
       ? previousElements[previousElements.length - 1]
       : undefined;
 
   /**
-   * Переход к следующему элементу.
+   * Добавляет упражнение перед элементом исходного документа.
+   *
+   * Важно: anchorIndex — индекс исходного элемента,
+   * а не индекс элемента в отображаемом списке.
    */
+  const addActivity = useCallback(
+    (
+      activity: ContentElement,
+      anchorIndex: number,
+      targetChapterIndex = chapterIndex,
+    ) => {
+      setActivities((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          chapterIndex: targetChapterIndex,
+          elementIndex: anchorIndex,
+          element: activity,
+        },
+      ]);
+    },
+    [chapterIndex],
+  );
+
+  const restoreActivities = useCallback((restored: RestoredReaderActivity[]) => {
+    if (restored.length === 0) return;
+    setActivities((current) => {
+      const existingIds = new Set(current.map((activity) => activity.id));
+      const additions = restored
+        .filter((activity) => !existingIds.has(activity.id))
+        .map((activity) => ({
+          id: activity.id,
+          chapterIndex: activity.chapterIndex,
+          elementIndex: activity.anchorIndex,
+          element: activity.element,
+        }));
+      return additions.length ? [...current, ...additions] : current;
+    });
+  }, []);
+
+  const getBaseElementIndex = useCallback((targetChapterIndex: number, renderedIndex: number): number | null => {
+    const element = chapterElements[targetChapterIndex]?.[renderedIndex];
+    if (!element || activities.some((activity) => activity.chapterIndex === targetChapterIndex && activity.element === element)) return null;
+    const baseIndex = baseChapterElements[targetChapterIndex]?.indexOf(element) ?? -1;
+    return baseIndex >= 0 ? baseIndex : null;
+  }, [activities, baseChapterElements, chapterElements]);
+
+  const getElementKey = useCallback((targetChapterIndex: number, renderedIndex: number): string => {
+    const element = chapterElements[targetChapterIndex]?.[renderedIndex];
+    if (!element) return `${targetChapterIndex}:missing:${renderedIndex}`;
+    const activity = activities.find((item) => item.chapterIndex === targetChapterIndex && item.element === element);
+    if (activity) return activity.id;
+    const baseIndex = baseChapterElements[targetChapterIndex]?.indexOf(element) ?? renderedIndex;
+    return `${targetChapterIndex}:base:${baseIndex}`;
+  }, [activities, baseChapterElements, chapterElements]);
+
+  const getNewActivityIndex = useCallback((targetChapterIndex: number, sourceIndex: number): number => {
+    const precedingActivities = activities.filter((activity) => activity.chapterIndex === targetChapterIndex && activity.elementIndex <= sourceIndex).length;
+    return sourceIndex + precedingActivities;
+  }, [activities]);
+
   const next = useCallback((): NavigationResult => {
-    /**
-     * В текущей главе есть ещё элементы.
-     */
     if (elementIndex < elements.length - 1) {
       const nextElementIndex = elementIndex + 1;
-
-      setElementIndex(nextElementIndex);
 
       return {
         type: "element",
@@ -154,15 +217,8 @@ export const useReader = (chapters: Chapter[]) => {
       };
     }
 
-    /**
-     * Текущая глава закончилась.
-     */
     if (chapterIndex < chapters.length - 1) {
       const completedChapterIndex = chapterIndex;
-      const nextChapterIndex = chapterIndex + 1;
-
-      setChapterIndex(nextChapterIndex);
-      setElementIndex(0);
 
       return {
         type: "chapter_completed",
@@ -170,9 +226,6 @@ export const useReader = (chapters: Chapter[]) => {
       };
     }
 
-    /**
-     * Закончилась вся книга.
-     */
     return {
       type: "book_completed",
       chapterIndex,
@@ -184,60 +237,48 @@ export const useReader = (chapters: Chapter[]) => {
     chapters.length,
   ]);
 
-  return {
-    // -------------------------
-    // Current chapter
-    // -------------------------
+  const advance = useCallback((result: NavigationResult) => {
+    if (result.type === "element") {
+      setElementIndex(result.elementIndex);
+    } else if (result.type === "chapter_completed") {
+      setChapterIndex(result.chapterIndex + 1);
+      setElementIndex(0);
+    }
+  }, []);
 
+  const restorePosition = useCallback((targetChapterIndex: number, targetElementIndex: number) => {
+    const safeChapterIndex = Math.max(0, Math.min(targetChapterIndex, chapters.length - 1));
+    setChapterIndex(safeChapterIndex);
+    pendingRestoreRef.current = { chapterIndex: safeChapterIndex, elementIndex: targetElementIndex };
+    setRestoreRevision((revision) => revision + 1);
+  }, [chapters.length]);
+
+  return {
     currentChapter,
     currentChapterIndex: chapterIndex,
-
-    // -------------------------
-    // Current element
-    // -------------------------
 
     currentElement,
     currentElementIndex: elementIndex,
 
-    // -------------------------
-    // Current chapter content
-    // -------------------------
-
     elements,
+    allChapterElements: baseChapterElements,
     currentElements,
 
-    // -------------------------
-    // Previous chapter
-    // -------------------------
-
     previousChapter,
-
-    previousChapterIndex:
-      chapterIndex > 0
-        ? chapterIndex - 1
-        : null,
-
+    previousChapterIndex: chapterIndex > 0 ? chapterIndex - 1 : null,
     previousElement,
     previousElements,
 
-    // -------------------------
-    // Progress
-    // -------------------------
-
-    /**
-     * Все элементы, которые пользователь уже прошёл.
-     */
     completedElements,
-
-    /**
-     * Алиас, если старый код использует showElements.
-     */
     showElements: completedElements,
 
-    // -------------------------
-    // Navigation
-    // -------------------------
-
     next,
+    advance,
+    restorePosition,
+    addActivity,
+    restoreActivities,
+    getBaseElementIndex,
+    getElementKey,
+    getNewActivityIndex,
   };
 };

@@ -32,8 +32,8 @@ export const useReaderTranslation = () => {
       try {
         const result =
           await commands.translate(
-            "en",
-            "ru",
+            "",
+            "",
             target.text,
           );
 

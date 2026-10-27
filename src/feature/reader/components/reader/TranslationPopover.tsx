@@ -2,8 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 
 import {
   useTranslationStore,
-} from "../store/TranslationStore";
-import { RefObject } from "react";
+} from "../../store/TranslationStore";
 
 type TranslationPopoverProps = {
   collisionBoundary:
@@ -112,7 +111,8 @@ export const TranslationPopover = ({ collisionBoundary }: TranslationPopoverProp
               max-w-[360px]
               rounded-lg
               border
-              bg-popover
+              bg-popover/60
+              backdrop-blur-lg
               p-3
               text-popover-foreground
               shadow-md

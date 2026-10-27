@@ -1,24 +1,15 @@
-import type {
-  useReaderSelection,
-} from "../hooks/useReaderSelection";
-
-import {
-  getReaderWordId,
-} from "../hooks/useReaderSelection";
-
-import {
-  useReaderTranslation,
-} from "../hooks/useReaderTranslation";
-
+import { events } from "@/shared/commands/bindings";
 import {
   ReaderWord as HtmlReaderWord,
-} from "../lib/html";
-
-import {
-  translationPopover,
-} from "./TranslationPopover";
+} from "../../lib/html";
 
 import { Popover } from "@base-ui/react";
+import { memo } from "react";
+import { getReaderWordId, useReaderSelection } from "../../hooks/useReaderSelection";
+import { useReaderTranslation } from "../../hooks/useReaderTranslation";
+import { useReaderStore } from "../../store/ReaderStore";
+import { useReaderDisplayStore } from "../../store/ReaderDisplayStore";
+import { translationPopover } from "../reader/TranslationPopover";
 
 type ReaderWordProps = {
   word: HtmlReaderWord;
@@ -31,7 +22,10 @@ type ReaderWordProps = {
   >;
 };
 
-export const ReaderWord = ({
+const lastTranslationEvent = new Map<string, number>();
+const TRANSLATION_EVENT_COOLDOWN_MS = 30_000;
+
+export const ReaderWord = memo(({
   word,
   chapterIndex,
   elementIndex,
@@ -40,6 +34,12 @@ export const ReaderWord = ({
   const { translate } =
     useReaderTranslation();
 
+
+
+  const bookId = useReaderStore((state) => state.book?.id)
+  const chapterId = useReaderStore((state) => state.chapterId )
+  const readerMode = useReaderDisplayStore((state) => state.mode);
+
   const wordId =
     getReaderWordId({
       chapterIndex,
@@ -47,8 +47,7 @@ export const ReaderWord = ({
       wordIndex: word.index,
     });
 
-  const isSelected =
-    selection.isSelected(wordId);
+  const isSelected = useReaderStore((state) => state.selectedIds.includes(wordId));
 
   const handleMouseDown = (
     event: React.MouseEvent<HTMLSpanElement>,
@@ -74,6 +73,25 @@ export const ReaderWord = ({
     }
   };
 
+  // useEffect(() => {
+  //   events.learningEvent.emit({
+  //     "event_type": "WordSeen",
+  //     id: crypto.randomUUID(),
+  //     user_id: "0",
+  //     timestamp: Date.now(),
+  //     context: {
+  //       book_id: bookId!,
+  //       chapter_id: `${chapterId}`,
+  //       element_id: `${elementIndex}`,
+  //       exercise_id: null,
+  //       question_id: null,
+  //       skill_id: null,
+  //       word_id: `${word.text}`
+  //     },
+  //     data: { type: "Empty" },
+  //   })
+  // }, [])
+
   const handleMouseUp = (
     event: React.MouseEvent<HTMLSpanElement>,
   ) => {
@@ -90,6 +108,8 @@ export const ReaderWord = ({
       return;
     }
 
+
+
     if (result.type === "selection") {
       void translate({
         type: "selection",
@@ -103,6 +123,31 @@ export const ReaderWord = ({
       });
 
       return;
+    }
+
+    const now = Date.now();
+    const previousEventAt = lastTranslationEvent.get(wordId) ?? 0;
+    if (readerMode === "learning" && now - previousEventAt >= TRANSLATION_EVENT_COOLDOWN_MS) {
+      if (lastTranslationEvent.size > 3000) lastTranslationEvent.clear();
+      lastTranslationEvent.set(wordId, now);
+      events.learningEvent.emit({
+      "event_type": "TranslationOpened",
+      id: crypto.randomUUID(),
+      user_id: "0",
+      timestamp: now,
+      context: {
+        book_id: bookId!,
+        chapter_id: `${chapterId}`,
+        element_id: `${elementIndex}`,
+        exercise_id: null,
+        question_id: null,
+        skill_id: null,
+        word_id: `${word.text}`
+      },
+      data: {
+        type: "Empty"
+      },
+      });
     }
 
     translationPopover.open(
@@ -143,7 +188,6 @@ export const ReaderWord = ({
           data-translation-word
           className={[
             "inline-block",
-            "select-none",
             "cursor-pointer",
             "border-b",
             "border-dashed",
@@ -174,4 +218,4 @@ export const ReaderWord = ({
       }
     />
   );
-};
+});

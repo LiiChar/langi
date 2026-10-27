@@ -20,7 +20,7 @@ impl DocumentBookParser {
     pub fn new() -> Self {
         let options = ParseOptions {
             content_type: ContentType::Html,
-
+            image_load: document_parser::ImageLoadType::Base64,
             ..Default::default()
         };
 

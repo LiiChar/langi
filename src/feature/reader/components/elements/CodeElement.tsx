@@ -1,5 +1,5 @@
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "#ui/popover";
-import { CodeElementType, ContentElement, ParagraphElementType } from "../lib/paragraph";
+import { CodeElementType } from "../../lib/paragraph";
 
 export type ParagraphElementProps = {
   element: CodeElementType

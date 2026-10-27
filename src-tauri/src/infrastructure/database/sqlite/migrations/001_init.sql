@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS user_words (
 
     state TEXT NOT NULL DEFAULT 'new',
 
+    first_seen_at INTEGER,
     last_seen_at INTEGER,
     last_reviewed_at INTEGER,
     next_review_at INTEGER,

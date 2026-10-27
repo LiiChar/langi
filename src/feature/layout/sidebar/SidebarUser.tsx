@@ -1,9 +1,4 @@
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "#ui/avatar"
-
+import { Avatar, AvatarFallback, AvatarImage } from "#ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,13 +8,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "#ui/dropdown-menu"
-
+import { Button } from "#ui/button"
 import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from "#ui/sidebar"
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "#ui/tooltip"
 
 import type { User } from "@/entities/user/user.type"
 
@@ -31,106 +26,120 @@ import {
   User as UserIcon,
 } from "lucide-react"
 
+import { useLayoutStore } from "../store/LayoutStore"
+
 export type SidebarUserProps = {
   user: User
 }
 
 export function SidebarUser({ user }: SidebarUserProps) {
-  const { isMobile } = useSidebar()
+  const sidebarMode = useLayoutStore((state) => state.sidebarMode)
+  const collapsed = sidebarMode === "icon"
+  const initials = user.name.slice(0, 2).toUpperCase()
 
   return (
-    <SidebarMenu>
-      <SidebarMenuItem className="w-full group-data-[collapsible=icon]:translate-x-1.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger
+    <DropdownMenu>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
             render={
-              <SidebarMenuButton
-                size="lg"
-                className="w-full pl-1.5 pr-1"
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size={collapsed ? "icon" : "lg"}
+                    className={[
+                      "w-full min-w-0",
+                      "justify-start gap-2",
+                      "overflow-hidden",
+                      collapsed ? "size-10 justify-center" : "px-1.5",
+                    ].join(" ")}
+                  />
+                }
               />
             }
           >
-            <Avatar className="size-8 rounded-lg grayscale">
-              <AvatarImage
-                src={user.avatar}
-                alt={user.name}
-              />
-
+            <Avatar className="size-8 shrink-0 rounded-lg grayscale">
+              <AvatarImage src={user.avatar} alt={user.name} />
               <AvatarFallback className="rounded-lg">
-                {user.name.slice(0, 2).toUpperCase()}
+                {initials}
               </AvatarFallback>
             </Avatar>
 
-            <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">
-                {user.name}
-              </span>
-
-              <span className="truncate text-xs text-muted-foreground">
-                {user.email}
-              </span>
-            </div>
-
-            <EllipsisVertical className="ml-auto size-4 shrink-0" />
-          </DropdownMenuTrigger>
-
-          <DropdownMenuContent
-            className="min-w-56 rounded-lg"
-            side={isMobile ? "bottom" : "right"}
-            align="end"
-            sideOffset={4}
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel className="p-0 font-normal">
-                <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                  <Avatar className="size-8 rounded-lg">
-                    <AvatarImage
-                      src={user.avatar}
-                      alt={user.name}
-                    />
-
-                    <AvatarFallback className="rounded-lg">
-                      {user.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">
-                      {user.name}
-                    </span>
-
-                    <span className="truncate text-xs text-muted-foreground">
-                      {user.email}
-                    </span>
-                  </div>
+            {!collapsed && (
+              <>
+                <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">
+                    {user.name}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {user.email}
+                  </span>
                 </div>
-              </DropdownMenuLabel>
 
-              <DropdownMenuItem>
-                <UserIcon />
-                Account
-              </DropdownMenuItem>
+                <EllipsisVertical className="ml-auto size-4 shrink-0" />
+              </>
+            )}
+          </TooltipTrigger>
 
-              <DropdownMenuItem>
-                <CreditCard />
-                Billing
-              </DropdownMenuItem>
+          {collapsed && (
+            <TooltipContent side="right">
+              {user.name}
+            </TooltipContent>
+          )}
+        </Tooltip>
+      </TooltipProvider>
 
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
+      <DropdownMenuContent
+        className="min-w-56 rounded-lg"
+        side={collapsed ? "right" : "bottom"}
+        align={collapsed ? "start" : "end"}
+        sideOffset={4}
+      >
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="p-0 font-normal">
+            <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+              <Avatar className="size-8 shrink-0 rounded-lg">
+                <AvatarImage src={user.avatar} alt={user.name} />
+                <AvatarFallback className="rounded-lg">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
 
-            <DropdownMenuSeparator />
+              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">
+                  {user.name}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {user.email}
+                </span>
+              </div>
+            </div>
+          </DropdownMenuLabel>
 
-            <DropdownMenuItem>
-              <LogOut />
-              Log out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+          <DropdownMenuItem>
+            <UserIcon />
+            Account
+          </DropdownMenuItem>
+
+          <DropdownMenuItem>
+            <CreditCard />
+            Billing
+          </DropdownMenuItem>
+
+          <DropdownMenuItem>
+            <Bell />
+            Notifications
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem>
+          <LogOut />
+          Log out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

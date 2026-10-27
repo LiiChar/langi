@@ -1617,9 +1617,9 @@ dependencies = [
 
 [[package]]
 name = "document-parser"
-version = "0.1.0-alpha.15"
+version = "0.1.0-alpha.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfee000c823b9d5dc345c37f400804fb953a4e66d2c3b2b8e7218f25c2230e0b"
+checksum = "51a5fea55003e793ad2237171808b75fa20bd1e66a67533d1187dee39a5d5abe"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
@@ -4817,8 +4817,6 @@ dependencies = [
 [[package]]
 name = "piper-rs"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b53db829904e6c2959ee6ff4922401a9eccd23c7bd6582bdd8ebec627a953c9b"
 dependencies = [
  "espeak-rs",
  "ndarray 0.16.1",

@@ -1,176 +1,123 @@
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarRail,
-} from "#ui/sidebar"
+  AudioLines,
+  ChartArea,
+  Earth,
+  Goal,
+  Library,
+  Mail,
+  Settings,
+  Languages,
+} from "lucide-react"
 
-import * as React from "react"
-import { AudioLines, Book, ChartArea, Earth, Goal, Leaf, Library, Mail, Settings } from "lucide-react"
-
-import { User } from "@/entities/user/user.type"
-import { useLayoutStore } from "../store/LayoutStore"
-import { SidebarUser } from "./SidebarUser"
-import { Link, useLocation, useRouter } from "@tanstack/react-router"
+import { Link, useLocation } from "@tanstack/react-router"
+import { buttonVariants } from "#ui/button"
 import { cn } from "cn"
 import { useReaderStore } from "@/feature/reader/store/ReaderStore"
 import { SidebarBook } from "./SidebarBook"
+import { useI18n } from "@/shared/i18n"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "#ui/tooltip"
 
 type Item = {
-  title: string,
-  link: string,
+  title: string
+  link: string
   icon: React.ReactNode
 }
 
 export const links: Item[] = [
-
-  {
-    icon: <Library />,
-    title: "Library",
-    link: "/",
-  },
-  {
-    icon: <Earth />,
-    title: "Browser",
-    link: "/browser",
-  },
-  {
-    icon: <AudioLines />,
-    title: "Vocabulary",
-    link: "/vocabulary",
-  },
-  {
-    icon: <Mail />,
-    title: "Review",
-    link: "/review",
-  },
-  {
-    icon: <ChartArea />,
-    title: "Statistics",
-    link: "/statistics",
-  },
-  {
-    icon: <Goal />,
-    title: "Goals",
-    link: "/goals",
-  },
-  {
-    icon: <Settings />,
-    title: "Settings",
-    link: "/settings",
-  },
+  { icon: <Library />, title: "nav.library", link: "/" },
+  { icon: <Earth />, title: "nav.browser", link: "/browser" },
+  { icon: <Languages />, title: "nav.dictionaries", link: "/dictionaries" },
+  { icon: <AudioLines />, title: "nav.vocabulary", link: "/vocabulary" },
+  { icon: <Mail />, title: "nav.review", link: "/review" },
+  { icon: <ChartArea />, title: "nav.statistics", link: "/statistics" },
+  { icon: <Goal />, title: "nav.goals", link: "/goals" },
+  { icon: <Settings />, title: "nav.settings", link: "/settings" },
 ]
 
-export function RootSidebar(
-  props: React.ComponentProps<typeof Sidebar>
-) {
+type RootSidebarProps = {
+  collapsed: boolean;
+}
 
-  const isOpen = useLayoutStore(
-    (state) => state.sidebarVisible
-  )
+export function RootSidebar({ collapsed }: RootSidebarProps) {
+  const { pathname } = useLocation()
+  const book = useReaderStore((state) => state.book)
 
-  const setOpen = useLayoutStore(
-    (state) => state.setSidebarVisible
-  )
-
-  const collapsible = useLayoutStore(
-    (state) => state.sidebarMode
-  )
-
-  const { pathname } = useLocation();
-
-  let book = useReaderStore((store) => store.book);
 
   return (
-    <Sidebar
-      {...props}
-      collapsible={collapsible}
-      className="border-none "
-    >
-      <SidebarHeader className="bg-secondary!">
-        <SidebarMenuButton
-          className="
-            justify-start
-            text-start
-            transition-opacity
-            group-data-[collapsible=icon]:translate-x-1
-            group-data-[collapsible=icon]:scale-125
-            group-data-[collapsible=icon]:translate-y-1
-            group
-          "
-          onClick={() => setOpen(!isOpen)}
-        >
-          <Leaf className="" />
+    <TooltipProvider>
+      <aside className="flex h-full min-h-0 w-full flex-col overflow-hidden border-none bg-sidebar text-sidebar-foreground">
+        <nav className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="flex flex-col gap-1">
+            {links.map((item) => (
+              <SidebarItem
+                key={item.link}
+                item={item}
+                active={pathname === item.link}
+                collapsed={collapsed}
+              />
+            ))}
+          </div>
+        </nav>
 
-          <span className="text-base font-semibold group-data-[collapsible=icon]:hidden">
-            Langi
-          </span>
-        </SidebarMenuButton>
-      </SidebarHeader>
-
-      <SidebarContent className="bg-secondary!">
-        <SidebarGroup>
-          <SidebarGroupContent className="flex flex-col gap-2">
-            <SidebarMenu>
-              {links.map((item) => (
-                <SidebarItem
-                  key={item.title}
-                  item={item}
-                  active={pathname === item.link}
-                />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter className=" bg-secondary!">
-        {book && <SidebarBook book={book} />}
-      </SidebarFooter>
-
-      <SidebarRail />
-    </Sidebar>
+        {/* Footer */}
+        {book && (
+          <div className="shrink-0 overflow-hidden p-1">
+            <SidebarBook book={book} />
+          </div>
+        )}
+      </aside>
+    </TooltipProvider>
   )
 }
 
 export type SidebarItemType = {
-  item: Item,
-  active: boolean,
+  item: Item
+  active: boolean
+  collapsed?: boolean
 }
 
 export function SidebarItem({
   item,
   active,
+  collapsed = false,
 }: SidebarItemType) {
-  return (
-    <Link to={item.link} className="block min-w-0">
-      <SidebarMenuItem className="min-w-0 group-data-[collapsible=icon]:h-[40px]">
-        <SidebarMenuButton
-          tooltip={item.title}
-          className={cn(
-            "min-w-0",
-            "group-data-[collapsible=icon]:min-w-[40px]",
-            "group-data-[collapsible=icon]:min-h-[40px]",
-            {
-              "bg-background! hover:bg-secondary/30": active,
-            }
-          )}
-        >
-          <div className="shrink-0 group-data-[collapsible=icon]:translate-x-1 group-data-[collapsible=icon]:scale-125">
-            {item.icon}
-          </div>
+  const { t } = useI18n()
 
-          <span className="min-w-0 truncate group-data-[collapsible=icon]:hidden">
-            {item.title}
-          </span>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
+  const link = (
+    <Link
+      to={item.link}
+      aria-label={collapsed ? t(item.title) : undefined}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        buttonVariants({ variant: "ghost", size: collapsed ? "icon" : "default" }),
+        "w-full min-w-0 gap-2 p-1",
+        collapsed ? "size-10 justify-center" : "justify-start",
+        active && "bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/80",
+      )}
+    >
+      <span className="shrink-0">{item.icon}</span>
+
+      {!collapsed && (
+        <span className="min-w-0 truncate">{t(item.title)}</span>
+      )}
     </Link>
-  );
+  )
+
+  if (!collapsed) {
+    return link
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={link} />
+      <TooltipContent side="right">
+        {t(item.title)}
+      </TooltipContent>
+    </Tooltip>
+  )
 }

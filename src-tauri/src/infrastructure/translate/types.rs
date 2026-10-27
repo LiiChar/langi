@@ -2,8 +2,11 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranslationMode {
-    /// Cache -> local dictionary -> online provider.
+    /// Online provider -> local dictionary.
     OnlineFirst,
+
+    /// Local dictionary -> online provider.
+    OfflineFirst,
 
     /// Cache -> online provider.
     OnlineOnly,

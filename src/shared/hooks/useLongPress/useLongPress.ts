@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { HookTarget } from '@/utils/helpers';
+import type { HookTarget } from '@/shared/lib';
 
 import { isTarget } from '@/shared/lib';
 

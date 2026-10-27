@@ -72,6 +72,38 @@ async getNextActivity() : Promise<Result<LearningActivity, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getBookExerciseEvents(bookId: string) : Promise<Result<LearningEvent[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_book_exercise_events", { bookId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getLearningOverview() : Promise<Result<LearningOverview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_learning_overview") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBookReadingPosition(bookId: string) : Promise<Result<ReadingPosition | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_book_reading_position", { bookId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveBookReadingPosition(bookId: string, chapterId: string, elementId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_book_reading_position", { bookId, chapterId, elementId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async translate(from: string, to: string, text: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("translate", { from, to, text }) };
@@ -154,6 +186,61 @@ async reloadConfig() : Promise<Result<Config, string>> {
 },
 async getConfigPath() : Promise<string> {
     return await TAURI_INVOKE("get_config_path");
+},
+async speakText(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speak_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopSpeech() : Promise<void> {
+    await TAURI_INVOKE("stop_speech");
+},
+async pauseSpeech() : Promise<void> {
+    await TAURI_INVOKE("pause_speech");
+},
+async resumeSpeech() : Promise<void> {
+    await TAURI_INVOKE("resume_speech");
+},
+async isSpeechPlaying() : Promise<boolean> {
+    return await TAURI_INVOKE("is_speech_playing");
+},
+async getTtsVoices() : Promise<Result<TTSVoice[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_tts_voices") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async prepareSpeechForLanguage(language: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_speech_for_language", { language }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getWikdictLanguages() : Promise<string[]> {
+    return await TAURI_INVOKE("get_wikdict_languages");
+},
+async getWikdictDictionaries() : Promise<Result<WikDictPair[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_wikdict_dictionaries") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async downloadWikdictDictionary(from: string, to: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_wikdict_dictionary", { from, to }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -224,6 +311,7 @@ export type DownloadEventType = "Started" | "Progress" | "Completed" | "Failed"
 export type ExercisesConfig = { enabled: boolean; translation: boolean; comprehension: boolean; words_per_exercise: number; max_per_session: number }
 export type GeneralConfig = { language: string; auto_update: boolean; telemetry_enabled: boolean; data_dir: string; cache_dir: string; log_level: LogLevel }
 export type LearningActivity = { WordReview: { word_ids: string[]; reason: string } } | { Translation: { word_id: string; reason: string } } | { SkillExercise: { skill_id: string; reason: string } } | { ContinueReading: { book_id: string; chapter_id: string; reason: string } } | { ComprehensionExercise: { book_id: string; chapter_id: string; reason: string } } | { Rest: { reason: string } }
+export type LearningBookProgress = { book_id: string; chapters_started: number; chapters_completed: number; reading_seconds: number; paragraphs_seen: number }
 export type LearningConfig = { enabled: boolean; auto_add_words: boolean; auto_mark_known_words: boolean; adaptive_learning: boolean; exercises: ExercisesConfig; review: ReviewConfig; show_hints: boolean; show_statistics: boolean }
 export type LearningEvent = { 
 /**
@@ -235,18 +323,24 @@ export type LearningEvent = {
  */
 id: string; user_id: string; event_type: LearningEventType; timestamp: number; context: LearningEventContext; data: LearningEventData }
 export type LearningEventContext = { book_id: string | null; chapter_id: string | null; element_id: string | null; word_id: string | null; exercise_id: string | null; question_id: string | null; skill_id: string | null }
-export type LearningEventData = "Empty" | { Word: { surface: string | null } } | { QuestionAnswered: { correct: boolean; response_time_ms: number | null; selected_answer: string | null; word_ids: string[]; skill_ids: string[] } } | { ExerciseCompleted: { correct: number; total: number; duration_ms: number | null; skill_ids: string[]; word_ids: string[] } } | { ReadingSession: { seconds: number; paragraphs_seen: number } } | { Paragraph: { word_count: number } }
+export type LearningEventData = { type: "Empty" } | { type: "Word"; surface: string | null } | { type: "QuestionAnswered"; correct: boolean; response_time_ms: number | null; selected_answer: string | null; correct_answer?: string | null; word_ids: string[]; skill_ids: string[] } | { type: "ExerciseCompleted"; correct: number; total: number; duration_ms: number | null; skill_ids: string[]; word_ids: string[] } | { type: "ReadingSession"; seconds: number; paragraphs_seen: number } | { type: "Paragraph"; word_count: number }
 export type LearningEventType = "WordSeen" | "TranslationOpened" | "FavoriteAdded" | "FavoriteRemoved" | "MarkedKnown" | "MarkedUnknown" | "QuestionAnswered" | "ExerciseStarted" | "ExerciseCompleted" | "ExerciseSkipped" | "ChapterOpened" | "ChapterCompleted" | "ParagraphSeen" | "ReadingSessionStarted" | "ReadingSessionFinished"
+export type LearningOverview = { words: LearningWord[]; skills: LearningSkill[]; books: LearningBookProgress[] }
+export type LearningSkill = { name: string; mastery: number; confidence: number; attempts: number }
+export type LearningWord = { word_id: string; familiarity: number; favorite: boolean; state: string; exposure_count: number; next_review_at: number | null }
 export type LocalDictionaryConfig = { enabled: boolean; dictionary_path: string | null }
 export type LogLevel = "Error" | "Warn" | "Info" | "Debug" | "Trace"
 export type OnlineTranslateConfig = { enabled: boolean; timeout_secs: number; batch_size: number; max_retries: number }
 export type ParseBooksResponse = { books: Book[]; errors: string[] }
 export type ReaderConfig = { font_family: string; font_size: number; line_height: number; content_width: number; theme: ReaderTheme; show_word_translation: boolean; show_sentence_translation: boolean; remember_position: boolean; restore_last_book: boolean; show_page_numbers: boolean; show_progress: boolean; show_chapter_progress: boolean; allow_text_selection: boolean; auto_complete_elements: boolean; mark_chapter_completed: boolean; progress_save_interval_secs: number }
 export type ReaderTheme = "Light" | "Dark" | "System"
+export type ReadingPosition = { chapter_id: string; element_id: string }
 export type ReviewConfig = { enabled: boolean; initial_interval_days: number; max_interval_days: number; known_word_threshold: number }
+export type TTSVoice = { id: string; name: string; language: string; description: string }
 export type TranslateConfig = { mode: TranslationMode; source_language: string; target_language: string; local_dictionary: LocalDictionaryConfig; online: OnlineTranslateConfig; cache: TranslationCacheConfig }
 export type TranslationCacheConfig = { enabled: boolean; ttl_secs: number; max_entries: number }
-export type TranslationMode = "OnlineFirst" | "OnlineOnly" | "OfflineOnly"
+export type TranslationMode = "OnlineFirst" | "OfflineFirst" | "OnlineOnly" | "OfflineOnly"
+export type WikDictPair = { from: string; to: string; installed: boolean }
 
 /** tauri-specta globals **/
 

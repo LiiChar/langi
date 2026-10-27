@@ -1,7 +1,7 @@
 import { getFileExtension } from "#lib/file";
 import { Book } from "@/entities/book/book.type";
 import { BookImage } from "lucide-react";
-import { HTMLAttributes, useEffect, useState } from "react";
+import { HTMLAttributes } from "react";
 
 export type BookCardProps = {
   book: Book;
@@ -16,21 +16,14 @@ export function BookGridItem({
   className,
   ...rest
 }: BookCardProps) {
-  const [percent, setPercent] = useState(0);
-
-  useEffect(() => {
-    // const value = calculateReadingProgress(book);
-
-    // setPercent(value);
-  }, [book]);
-
+  const percent = Math.max(0, Math.min(100, book.meta.progress_read ?? 0));
   return (
     <div
       {...rest}
       onClick={() => onHandleClick(book.id)}
       className={`
         group relative aspect-2/3 rounded-xl overflow-hidden cursor-pointer
-        bg-secondary hover:bg-secondary/60
+        bg-card hover:bg-card/60
         border border-border hover:border-border/60
         transition-all duration-200 hover:scale-[1.02] hover:shadow-xl
         animate-fade-in
@@ -55,7 +48,7 @@ export function BookGridItem({
       )}
 
       {/* File extension */}
-      {book.meta.path && <div className="absolute top-2 right-2 text-sm glass rounded-md p-1 py-0 z-10 border bg-secondary/60 border-secondary/40">
+      {book.meta.path && <div className="absolute top-2 right-2 text-sm glass rounded-md p-1 py-0 z-10 border bg-card/80 border-card/40">
         {getFileExtension(book.meta.path)}
      </div>}
 

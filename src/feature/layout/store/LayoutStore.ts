@@ -1,27 +1,26 @@
 import type { ReactNode } from "react"
 import { create } from "zustand"
 
-export type SidebarMode = "icon" | "none"
+export type SidebarMode = "icon" | "hide" | "full"
 
 interface LayoutStore {
   // Slots
   header: ReactNode
   footer: ReactNode
+  rightSidebar: ReactNode
 
   prevHeader: ReactNode
   prevFooter: ReactNode
 
-  // Visibility
-  sidebarVisible: boolean
+  sidebarMode: SidebarMode
   headerVisible: boolean
   footerVisible: boolean
-
-  // Sidebar
-  sidebarMode: SidebarMode
+  rightSidebarVisible: boolean
 
   // Slots actions
   setHeader: (header: ReactNode) => void
   setFooter: (footer: ReactNode) => void
+  setRightSidebar: (rightSidebar: ReactNode) => void
 
   setPrevHeader: () => void
   setPrevFooter: () => void
@@ -30,34 +29,30 @@ interface LayoutStore {
   clearFooter: () => void
 
   // Visibility actions
-  setSidebarVisible: (visible: boolean) => void
+  setSidebarMode: (mode: SidebarMode) => void
+  setRightSidebarVisible: (visible: boolean) => void
   setHeaderVisible: (visible: boolean) => void
   setFooterVisible: (visible: boolean) => void
 
-  // Toggle actions
-  toggleSidebar: () => void
   toggleHeader: () => void
   toggleFooter: () => void
 
-  // Sidebar actions
-  setSidebarMode: (mode: SidebarMode) => void
-
-  // Utils
   resetLayout: () => void
 }
 
 const initialState = {
   header: null,
   footer: null,
+  rightSidebar: null,
 
   prevHeader: null,
   prevFooter: null,
 
-  sidebarVisible: true,
   headerVisible: true,
-  footerVisible: true,
+  footerVisible: false,
+  rightSidebarVisible: false,
 
-  sidebarMode: "icon" as SidebarMode,
+  sidebarMode: "full" as SidebarMode,
 }
 
 export const useLayoutStore = create<LayoutStore>((set, get) => ({
@@ -65,6 +60,8 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
   setHeader: (header) => set({ header, prevHeader: get().header }),
   setFooter: (footer) => set({ footer, prevHeader: get().footer }),
+  setRightSidebar: (rightSidebar) =>
+    set({ rightSidebar, rightSidebarVisible: rightSidebar != null }),
 
   setPrevHeader: () => {
     set({header: get().prevHeader})
@@ -76,14 +73,9 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   clearHeader: () => set({ header: null }),
   clearFooter: () => set({ footer: null }),
 
-  setSidebarVisible: (visible) => set({ sidebarVisible: visible }),
   setHeaderVisible: (visible) => set({ headerVisible: visible }),
   setFooterVisible: (visible) => set({ footerVisible: visible }),
-
-  toggleSidebar: () =>
-    set((state) => ({
-      sidebarVisible: !state.sidebarVisible,
-    })),
+  setRightSidebarVisible: (visible) => set({ rightSidebarVisible: visible }),
 
   toggleHeader: () =>
     set((state) => ({

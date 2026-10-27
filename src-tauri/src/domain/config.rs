@@ -92,6 +92,7 @@ pub struct TranslationCacheConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum TranslationMode {
     OnlineFirst,
+    OfflineFirst,
     OnlineOnly,
     OfflineOnly,
 }

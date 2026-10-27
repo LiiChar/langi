@@ -8,6 +8,8 @@ pub trait TTSProvider: Send + Sync {
 
     fn voices(&self) -> Result<Vec<TTSVoice>, TTSError>;
 
+    fn prepare_language(&self, _language: &str) -> Result<(), TTSError> { Ok(()) }
+
     fn default_voice(&self) -> Result<TTSVoice, TTSError>;
 
     async fn speak(

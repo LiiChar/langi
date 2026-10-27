@@ -1,11 +1,8 @@
-import {
-  renderHtmlWithWords,
-  type ReaderWord as HtmlReaderWord,
-} from "../lib/html";
-
-import { ParagraphElementType } from "../lib/paragraph";
-import type { useReaderSelection } from "../hooks/useReaderSelection";
+import { useReaderSelection } from "../../hooks/useReaderSelection";
+import { renderHtmlWithWords, type ReaderWord as HtmlReaderWord } from "../../lib/html";
+import { ParagraphElementType } from "../../lib/paragraph";
 import { ReaderWord } from "./ReaderWord";
+import { memo, useMemo } from "react";
 
 type ParagraphElementProps = {
   element: ParagraphElementType;
@@ -14,13 +11,13 @@ type ParagraphElementProps = {
   elementIndex: number;
 };
 
-export const ParagraphElement = ({
+export const ParagraphElement = memo(({
   element,
   selection,
   chapterIndex,
   elementIndex,
 }: ParagraphElementProps) => {
-  const content = renderHtmlWithWords(
+  const content = useMemo(() => renderHtmlWithWords(
     element.text,
     (word: HtmlReaderWord) => (
       <ReaderWord
@@ -31,7 +28,7 @@ export const ParagraphElement = ({
         selection={selection}
       />
     ),
-  );
+  ), [element.text, selection, chapterIndex, elementIndex]);
 
   return (
     <div
@@ -41,11 +38,9 @@ export const ParagraphElement = ({
         rounded-md
         transition-colors
         duration-200
-        hover:bg-primary/10
-        has-[span[data-word-index]:hover]:bg-transparent
       "
     >
       {content}
     </div>
   );
-};
+});
